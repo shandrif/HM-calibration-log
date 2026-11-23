@@ -60,6 +60,18 @@ export function stepDose(v: number, part: 'major' | 'minor', dir: 1 | -1): numbe
 
 /** Espresso shots thrown while calibrating (per dose). */
 export const MAX_THROWN = 50;
+/** Coffee weight of one shot, in tenths of a gram (18.8 g and 25.8 g). */
+export const DOSE_TENTHS_G = { d1: 188, d2: 258 } as const;
+/** Total coffee thrown, in tenths of a gram (stored as an integer to avoid rounding drift). */
+export function thrownTenths(w1 = 0, w2 = 0): number {
+  return w1 * DOSE_TENTHS_G.d1 + w2 * DOSE_TENTHS_G.d2;
+}
+/** 82.2 g, or 1.25 kg from 1000 g. Input in tenths of a gram. */
+export function formatGrams(tenths: number): string {
+  const g = tenths / 10;
+  if (g >= 1000) return `${(g / 1000).toFixed(2).replace(/\.?0+$/, '')} kg`;
+  return `${Number.isInteger(g) ? g : g.toFixed(1)} g`;
+}
 export function isValidThrown(v: unknown): v is number {
   return typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= MAX_THROWN;
 }
@@ -82,6 +94,7 @@ export interface Batch {
   d2?: number; // espresso dose 2
   w1?: number; // espresso: dose 1 shots thrown during calibration
   w2?: number; // espresso: dose 2 shots thrown during calibration
+  wg?: number; // espresso: coffee thrown, tenths of a gram (w1 × 18.8 g + w2 × 25.8 g at the time of logging)
   dl?: number; // ml discarded from the previous batch of this slot
   v?: number; // voided at
   m?: number; // distance from store (m) when logged

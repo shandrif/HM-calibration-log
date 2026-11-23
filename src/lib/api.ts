@@ -60,7 +60,7 @@ export interface WasteResponse {
   from: string;
   to: string;
   today: string;
-  totals: Record<string, Record<string, number[]>>; // storeId -> slot -> [ml, discards, batches, dose1 thrown, dose2 thrown]
+  totals: Record<string, Record<string, number[]>>; // storeId -> slot -> [ml, discards, batches, dose1 thrown, dose2 thrown, thrown 0.1 g]
 }
 
 export interface AdminStore {

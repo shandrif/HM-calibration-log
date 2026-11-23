@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { toast } from 'sonner';
-import { type Batch, type StoreInfo, slotsFor, DISCARD_QUICK_ML, MAX_THROWN } from '../shared/config';
+import { type Batch, type StoreInfo, slotsFor, DISCARD_QUICK_ML, MAX_THROWN, DOSE_TENTHS_G, thrownTenths, formatGrams } from '../shared/config';
 import { api, ApiError } from './lib/api';
 import { useI18n, fmt, slotLabel } from './lib/i18n';
 import { useNow, setServerNow, nowMs, clock, dayKey } from './lib/time';
@@ -420,10 +420,17 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
               <DoseStepper label={t.dose2} value={espressoSheet.d2} onChange={(d2) => setEspressoSheet({ ...espressoSheet, d2 })} />
             </div>
             <div className="thrown">
-              <div className="thrown-title">{t.thrownTitle}</div>
+              <div className="thrown-title">
+                <span>{t.thrownTitle}</span>
+                {espressoSheet.w1 + espressoSheet.w2 > 0 && (
+                  <motion.span className="thrown-total num" key={espressoSheet.w1 * 100 + espressoSheet.w2} initial={{ opacity: 0.4, y: -2 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }}>
+                    = {formatGrams(thrownTenths(espressoSheet.w1, espressoSheet.w2))}
+                  </motion.span>
+                )}
+              </div>
               <div className="thrown-row">
-                <Counter label={t.dose1} value={espressoSheet.w1} onChange={(w1) => setEspressoSheet({ ...espressoSheet, w1 })} />
-                <Counter label={t.dose2} value={espressoSheet.w2} onChange={(w2) => setEspressoSheet({ ...espressoSheet, w2 })} />
+                <Counter label={t.dose1} hint={fmt(t.gPerShot, { g: DOSE_TENTHS_G.d1 / 10 })} value={espressoSheet.w1} onChange={(w1) => setEspressoSheet({ ...espressoSheet, w1 })} />
+                <Counter label={t.dose2} hint={fmt(t.gPerShot, { g: DOSE_TENTHS_G.d2 / 10 })} value={espressoSheet.w2} onChange={(w2) => setEspressoSheet({ ...espressoSheet, w2 })} />
               </div>
             </div>
             <div className="sheet-who">
@@ -495,10 +502,12 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
 
 // ---------------------------------------------------------------- thrown shots counter
 
-function Counter({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
+function Counter({ label, hint, value, onChange }: { label: string; hint: string; value: number; onChange: (v: number) => void }) {
   return (
     <div className="counter" data-active={value > 0 || undefined}>
-      <span className="counter-label">{label}</span>
+      <span className="counter-label">
+        {label} <small className="counter-hint num">{hint}</small>
+      </span>
       <button type="button" className="counter-btn" onClick={() => onChange(Math.max(0, value - 1))} disabled={value === 0} aria-label={`${label} −`}>
         <IconMinus />
       </button>

@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import { toast } from 'sonner';
 import { adminApi, type AdminStore, type WasteResponse } from '../lib/api';
 import { addDays } from '../lib/time';
+import { formatGrams } from '../../shared/config';
 
 type GroupBy = 'store' | 'area_manager' | 'rom' | 'city';
 const RANGES = [
@@ -29,6 +30,7 @@ interface Row {
   stores: number;
   w1: number;
   w2: number;
+  wg: number;
 }
 
 export function WastePanel({ stores, today, filterNote }: { stores: AdminStore[]; today: string; filterNote?: string }) {
@@ -67,6 +69,7 @@ export function WastePanel({ stores, today, filterNote }: { stores: AdminStore[]
           stores: 0,
           w1: 0,
           w2: 0,
+          wg: 0,
         });
       groups.get(key)!.stores++;
     }
@@ -76,9 +79,10 @@ export function WastePanel({ stores, today, filterNote }: { stores: AdminStore[]
       const key = groupBy === 'store' ? sid : (s[groupBy] || 'Unassigned').trim();
       const g = groups.get(key);
       if (!g) continue;
-      for (const [slot, [ml, n, batches, w1 = 0, w2 = 0]] of Object.entries(slots)) {
+      for (const [slot, [ml, n, batches, w1 = 0, w2 = 0, wg = 0]] of Object.entries(slots)) {
         g.w1 += w1;
         g.w2 += w2;
+        g.wg += wg;
         if (slot.startsWith('espresso')) continue;
         g.batches += batches;
         if (!ml) continue;
@@ -93,16 +97,16 @@ export function WastePanel({ stores, today, filterNote }: { stores: AdminStore[]
   }, [data, stores, groupBy]);
 
   const total = rows.reduce(
-    (t, r) => ({ eth: t.eth + r.eth, bra: t.bra + r.bra, ethHot: t.ethHot + r.ethHot, ethIced: t.ethIced + r.ethIced, braHot: t.braHot + r.braHot, braIced: t.braIced + r.braIced, events: t.events + r.events, w1: t.w1 + r.w1, w2: t.w2 + r.w2 }),
-    { eth: 0, bra: 0, ethHot: 0, ethIced: 0, braHot: 0, braIced: 0, events: 0, w1: 0, w2: 0 },
+    (t, r) => ({ eth: t.eth + r.eth, bra: t.bra + r.bra, ethHot: t.ethHot + r.ethHot, ethIced: t.ethIced + r.ethIced, braHot: t.braHot + r.braHot, braIced: t.braIced + r.braIced, events: t.events + r.events, w1: t.w1 + r.w1, w2: t.w2 + r.w2, wg: t.wg + r.wg }),
+    { eth: 0, bra: 0, ethHot: 0, ethIced: 0, braHot: 0, braIced: 0, events: 0, w1: 0, w2: 0, wg: 0 },
   );
   const max = Math.max(1, ...rows.map((r) => r.eth + r.bra));
   const withWaste = rows.filter((r) => r.eth + r.bra + r.w1 + r.w2 > 0);
   const storesWithWaste = groupBy === 'store' ? withWaste.length : rows.filter((r) => r.eth + r.bra > 0).reduce((a, r) => a + r.stores, 0);
 
   const exportCsv = () => {
-    const head = ['Group', 'Detail', 'Ethiopian L', 'Ethiopian hot L', 'Ethiopian iced L', 'Brazilian L', 'Brazilian hot L', 'Brazilian iced L', 'Total drip L', 'Drip discard events', 'Drip batches', 'Espresso dose 1 shots thrown', 'Espresso dose 2 shots thrown'];
-    const lines = rows.map((r) => [r.label, r.sub, L(r.eth), L(r.ethHot), L(r.ethIced), L(r.bra), L(r.braHot), L(r.braIced), L(r.eth + r.bra), r.events, r.batches, r.w1, r.w2]);
+    const head = ['Group', 'Detail', 'Ethiopian L', 'Ethiopian hot L', 'Ethiopian iced L', 'Brazilian L', 'Brazilian hot L', 'Brazilian iced L', 'Total drip L', 'Drip discard events', 'Drip batches', 'Espresso dose 1 shots thrown', 'Espresso dose 2 shots thrown', 'Espresso thrown (g)'];
+    const lines = rows.map((r) => [r.label, r.sub, L(r.eth), L(r.ethHot), L(r.ethIced), L(r.bra), L(r.braHot), L(r.braIced), L(r.eth + r.bra), r.events, r.batches, r.w1, r.w2, (r.wg / 10).toFixed(1)]);
     const csv = [head, ...lines].map((l) => l.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a');
@@ -137,11 +141,11 @@ export function WastePanel({ stores, today, filterNote }: { stores: AdminStore[]
         </div>
         <div className="waste-total" data-tone="esp">
           <div className="waste-total-label">
-            <i className="dot-esp" /> Espresso shots thrown
+            <i className="dot-esp" /> Espresso thrown
           </div>
-          <div className="waste-total-value num">{data ? total.w1 + total.w2 : '–'}</div>
+          <div className="waste-total-value num">{data ? formatGrams(total.wg) : '–'}</div>
           <div className="waste-total-sub num">
-            Dose 1: {total.w1} · Dose 2: {total.w2}
+            Dose 1 ×{total.w1} (18.8 g) · Dose 2 ×{total.w2} (25.8 g)
           </div>
         </div>
       </div>
@@ -171,8 +175,8 @@ export function WastePanel({ stores, today, filterNote }: { stores: AdminStore[]
       <div className="waste-legend">
         <span><i className="dot-eth" /> Ethiopian</span>
         <span><i className="dot-bra" /> Brazilian</span>
-        <span><i className="dot-esp" /> Espresso shots</span>
-        <span className="muted">Drip is split by bean; espresso shows shots thrown while calibrating. Reset batches are excluded.</span>
+        <span><i className="dot-esp" /> Espresso</span>
+        <span className="muted">Drip is split by bean. Espresso = shots thrown while calibrating (dose 1 = 18.8 g, dose 2 = 25.8 g). Reset batches are excluded.</span>
         {filterNote && <span className="status-chip" data-warn>Filtered: {filterNote}</span>}
       </div>
 
@@ -187,7 +191,7 @@ export function WastePanel({ stores, today, filterNote }: { stores: AdminStore[]
             <span className="num">Ethiopian</span>
             <span className="num">Brazilian</span>
             <span className="num">Drip total</span>
-            <span className="num">Shots D1 / D2</span>
+            <span className="num">Espresso</span>
             <span className="waste-bar-col" />
           </div>
           {withWaste.map((r, i) => (
@@ -206,7 +210,7 @@ export function WastePanel({ stores, today, filterNote }: { stores: AdminStore[]
               <span className="num" title={`Hot ${L(r.ethHot)} L · Iced ${L(r.ethIced)} L`}>{L(r.eth)} L</span>
               <span className="num" title={`Hot ${L(r.braHot)} L · Iced ${L(r.braIced)} L`}>{L(r.bra)} L</span>
               <span className="num"><b>{L(r.eth + r.bra)} L</b></span>
-              <span className="num" title="Espresso shots thrown: dose 1 / dose 2">{r.w1} / {r.w2}</span>
+              <span className="num" title={`Dose 1 ×${r.w1} · Dose 2 ×${r.w2}`}>{r.wg ? formatGrams(r.wg) : '–'}</span>
               <span className="waste-bar-col">
                 <span className="waste-bar" style={{ width: `${((r.eth + r.bra) / max) * 100}%` }}>
                   <span className="seg-eth" style={{ flexGrow: r.eth }} />

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
-import { type Batch, type StoreInfo, formatDose } from '../../shared/config';
+import { type Batch, type StoreInfo, formatDose, formatGrams, thrownTenths } from '../../shared/config';
 import { useI18n, slotLabel } from '../lib/i18n';
 import { addDays, clock, dayKey, formatDay, nowMs } from '../lib/time';
 import { batchOutcome } from '../lib/board';
@@ -67,7 +67,7 @@ export function LogView({
   const sorted = batches ? [...batches].sort((a, b) => b.t - a.t) : [];
   const live = sorted.filter((b) => !b.v);
   const discarded = live.reduce((a, b) => a + (b.dl ?? 0), 0);
-  const shots = live.reduce((a, b) => a + (b.w1 ?? 0) + (b.w2 ?? 0), 0);
+  const thrownG = live.reduce((a, b) => a + (b.wg ?? thrownTenths(b.w1, b.w2)), 0);
 
   return (
     <div className="logview">
@@ -100,8 +100,8 @@ export function LogView({
           <div className="summary-label">{t.discarded}</div>
         </div>
         <div className="summary-item">
-          <div className="summary-value num">{batches ? shots : '–'}</div>
-          <div className="summary-label">{t.shotsThrown}</div>
+          <div className="summary-value num">{batches ? formatGrams(thrownG) : '–'}</div>
+          <div className="summary-label">{t.espressoThrown}</div>
         </div>
       </div>
 
@@ -157,7 +157,7 @@ export function LogView({
                     </span>
                     {!!(b.w1 || b.w2) && (
                       <span className="entry-disc num">
-                        {t.thrown}: {t.dose1} ×{b.w1 ?? 0} · {t.dose2} ×{b.w2 ?? 0}
+                        {t.thrown}: {t.dose1} ×{b.w1 ?? 0} · {t.dose2} ×{b.w2 ?? 0} · {formatGrams(b.wg ?? thrownTenths(b.w1, b.w2))}
                       </span>
                     )}
                     {!!b.dl && (

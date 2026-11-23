@@ -1,5 +1,5 @@
 import type { Batch, StoreInfo } from '../../shared/config';
-import { formatDose } from '../../shared/config';
+import { formatDose, formatGrams, thrownTenths } from '../../shared/config';
 import type { Strings } from '../lib/i18n';
 import { slotLabel } from '../lib/i18n';
 import { batchOutcome } from '../lib/board';
@@ -52,7 +52,7 @@ export function ReportPages({ t, lang, store, day, batches, generatedAt }: { t: 
   const live = batches.filter((b) => !b.v);
   const expired = live.filter((b) => batchOutcome(b, batches, generatedAt) === 'expired').length;
   const discardedMl = live.reduce((a, b) => a + (b.dl ?? 0), 0);
-  const shots = live.reduce((a, b) => a + (b.w1 ?? 0) + (b.w2 ?? 0), 0);
+  const thrownG = live.reduce((a, b) => a + (b.wg ?? thrownTenths(b.w1, b.w2)), 0);
   const name = lang === 'ar' && store.name_ar ? store.name_ar : store.name;
   return (
     <>
@@ -75,7 +75,7 @@ export function ReportPages({ t, lang, store, day, batches, generatedAt }: { t: 
                 <Stat label={t.calibrations} value={String(live.length)} />
                 <Stat label={t.expiredCount} value={String(expired)} tone={expired ? 'bad' : undefined} />
                 <Stat label={t.discarded} value={`${(discardedMl / 1000).toFixed(2).replace(/\.?0+$/, '') || 0} ${t.litres}`} />
-                <Stat label={t.shotsThrown} value={String(shots)} />
+                <Stat label={t.espressoThrown} value={formatGrams(thrownG)} />
                 <Stat label={t.voided} value={String(batches.length - live.length)} />
               </div>
             </>
@@ -146,7 +146,7 @@ function Row({ t, b, all, now }: { t: Strings; b: Batch; all: Batch[]; now: numb
       <span className="c-dose" dir="ltr">{b.d1 != null ? `${formatDose(b.d1)} · ${formatDose(b.d2)}` : ''}</span>
       <span className="c-by">{b.n}</span>
       <span className="c-end" dir="ltr">{clock(b.x)}</span>
-      <span className="c-disc" dir="ltr">{b.dl ? `${b.dl / 1000} ${t.litres}` : b.w1 || b.w2 ? `D1×${b.w1 ?? 0} D2×${b.w2 ?? 0}` : ''}</span>
+      <span className="c-disc" dir="ltr">{b.dl ? `${b.dl / 1000} ${t.litres}` : b.w1 || b.w2 ? `D1×${b.w1 ?? 0} D2×${b.w2 ?? 0} · ${formatGrams(b.wg ?? thrownTenths(b.w1, b.w2))}` : ''}</span>
       <span className="c-status">{statusText}</span>
     </div>
   );
