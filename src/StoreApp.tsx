@@ -415,7 +415,7 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
                 })}
               </div>
             )}
-            {tab === 'log' && <LogView store={store} fetchDay={(d) => api.log(d)} liveBatches={batches} onAuthError={onAuthError} />}
+            {tab === 'log' && <LogView store={store} fetchDay={(d) => api.log(d)} fetchDays={() => api.logDays()} liveBatches={batches} onAuthError={onAuthError} />}
             {tab === 'more' && (
               <MoreView
                 store={store}

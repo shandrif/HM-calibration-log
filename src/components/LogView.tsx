@@ -7,18 +7,21 @@ import { useI18n, slotLabel } from '../lib/i18n';
 import { addDays, clock, dayKey, formatDay, nowMs } from '../lib/time';
 import { batchOutcome, discardByBean, litres } from '../lib/board';
 import { buildPdf, canShareFile, downloadFile } from '../lib/pdf';
-import { IconChevron, IconDownload, IconShare, IconDrop } from './Icons';
+import { IconChevron, IconDownload, IconShare, IconDrop, IconCalendar } from './Icons';
+import { CalendarSheet } from './CalendarSheet';
 
 const RETENTION = 92;
 
 export function LogView({
   store,
   fetchDay,
+  fetchDays,
   liveBatches,
   onAuthError,
 }: {
   store: StoreInfo;
   fetchDay: (day: string) => Promise<{ batches: Batch[] }>;
+  fetchDays?: () => Promise<{ days: Record<string, number> }>;
   liveBatches?: Batch[];
   onAuthError?: (e: unknown) => boolean;
 }) {
@@ -37,6 +40,18 @@ export function LogView({
   fetchRef.current = fetchDay;
   authRef.current = onAuthError;
   failedText.current = t.failed;
+
+  // Calendar: opened from the date; per-day counts are loaded each time it opens (≤ 92 rows).
+  const [calOpen, setCalOpen] = useState(false);
+  const [counts, setCounts] = useState<Record<string, number> | null>(null);
+  const fetchDaysRef = useRef(fetchDays);
+  fetchDaysRef.current = fetchDays;
+  const openCalendar = () => {
+    setCalOpen(true);
+    fetchDaysRef.current?.()
+      .then((r) => setCounts(r.days))
+      .catch(() => {});
+  };
 
   // Past days don't change, so each one is fetched once per visit and then served from memory.
   const cache = useRef(new Map<string, Batch[]>());
@@ -99,14 +114,17 @@ export function LogView({
         <button className="icon-btn" onClick={() => setDay(addDays(day, -1))} disabled={day <= oldest} aria-label={t.prevDay}>
           <IconChevron dir={lang === 'ar' ? 'right' : 'left'} />
         </button>
-        <label className="daynav-label" data-loading={loading || undefined}>
+        <button className="daynav-label" data-loading={loading || undefined} onClick={openCalendar} aria-haspopup="dialog">
+          <IconCalendar />
           <span>{day === today ? t.today : formatDay(day, lang)}</span>
-          <input type="date" value={day} min={oldest} max={today} onChange={(e) => e.target.value && setDay(e.target.value)} aria-label={t.today} />
-        </label>
+          <IconChevron dir="down" />
+        </button>
         <button className="icon-btn" onClick={() => setDay(addDays(day, 1))} disabled={day >= today} aria-label={t.nextDay}>
           <IconChevron dir={lang === 'ar' ? 'left' : 'right'} />
         </button>
       </div>
+
+      <CalendarSheet open={calOpen} onOpenChange={setCalOpen} value={day} min={oldest} max={today} counts={counts} onSelect={setDay} />
 
       <div className="summary">
         <div className="summary-item">

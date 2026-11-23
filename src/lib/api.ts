@@ -39,6 +39,7 @@ export const api = {
   discard: (id: string, day: string, ml: number) => req('POST', `/api/batches/${id}/discard`, { day, ml }),
   staff: (names: string[]) => req<{ staff: string[] }>('PUT', '/api/staff', { names }),
   log: (day: string) => req<{ day: string; store: StoreInfo; batches: Batch[] }>('GET', `/api/log?day=${day}`),
+  logDays: () => req<{ days: Record<string, number> }>('GET', '/api/log/days'),
   subscribe: (sub: PushSubscriptionJSON) => req('POST', '/api/push/subscribe', sub),
   unsubscribe: (endpoint: string) => req('POST', '/api/push/unsubscribe', { endpoint }),
   testPush: () => req('POST', '/api/push/test'),
@@ -51,6 +52,7 @@ export const adminApi = {
   createStore: (s: Partial<AdminStore> & { pin: string }) => req<{ id: number }>('POST', '/api/admin/stores', s),
   updateStore: (id: number, s: Partial<AdminStore> & { pin?: string }) => req('PUT', `/api/admin/stores/${id}`, s),
   log: (store: number, day: string) => req<{ day: string; store: StoreInfo; batches: Batch[] }>('GET', `/api/admin/log?store=${store}&day=${day}`),
+  logDays: (store: number) => req<{ days: Record<string, number> }>('GET', `/api/admin/log/days?store=${store}`),
   refreshUsage: () => req('POST', '/api/admin/usage/refresh'),
   waste: (from: string, to: string) => req<WasteResponse>('GET', `/api/admin/waste?from=${from}&to=${to}`),
   pins: (body: { ids?: number[]; onlyMissing?: boolean }) =>

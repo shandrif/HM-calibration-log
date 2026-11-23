@@ -251,7 +251,7 @@ export function Admin() {
       <Sheet open={!!viewing} onOpenChange={(o) => !o && setViewing(null)} title={viewing ? `${viewing.code} · ${viewing.name}` : ''}>
         {viewing && (
           <div className="sheet-body sheet-scroll">
-            <LogView store={toInfo(viewing)} fetchDay={(d) => adminApi.log(viewing.id, d)} />
+            <LogView store={toInfo(viewing)} fetchDay={(d) => adminApi.log(viewing.id, d)} fetchDays={() => adminApi.logDays(viewing.id)} />
           </div>
         )}
       </Sheet>

@@ -256,6 +256,22 @@ app.put('/api/staff', requireStore, async (c) => {
   return c.json({ staff: clean });
 });
 
+/** Calibrations per day for the calendar dots (one row per stored day, at most 92). */
+async function dayCounts(env: Env, storeId: number): Promise<Record<string, number>> {
+  const from = dayKey(Date.now() - Number(env.RETENTION_DAYS || 92) * 24 * 3600 * 1000, tz(env));
+  const { results } = await env.DB.prepare(
+    `SELECT d.day AS day, SUM(CASE WHEN json_extract(j.value, '$.v') IS NULL THEN 1 ELSE 0 END) AS n
+     FROM days d, json_each(d.batches) j
+     WHERE d.store_id = ?1 AND d.day >= ?2
+     GROUP BY d.day`,
+  )
+    .bind(storeId, from)
+    .all<{ day: string; n: number }>();
+  return Object.fromEntries(results.map((r) => [r.day, r.n]));
+}
+
+app.get('/api/log/days', requireStore, async (c) => c.json({ days: await dayCounts(c.env, c.get('store').id) }));
+
 app.get('/api/log', requireStore, async (c) => {
   const store = c.get('store');
   const day = c.req.query('day') ?? dayKey(Date.now(), tz(c.env));
@@ -454,6 +470,8 @@ app.put('/api/admin/stores/:id', requireAdmin, async (c) => {
   }
   return c.json({ ok: true });
 });
+
+app.get('/api/admin/log/days', requireAdmin, async (c) => c.json({ days: await dayCounts(c.env, Number(c.req.query('store'))) }));
 
 app.get('/api/admin/log', requireAdmin, async (c) => {
   const id = Number(c.req.query('store'));
