@@ -9,6 +9,7 @@ import { getFix } from '../lib/geo';
 import { setServerNow, shortDuration } from '../lib/time';
 import type { StoreInfo } from '../../shared/config';
 import { WastePanel } from './Waste';
+import { formatGrams, dripTenths } from '../../shared/config';
 import { BatchesPanel } from './Batches';
 
 // Head-office screen. English only (internal tool).
@@ -191,7 +192,7 @@ export function Admin() {
                     )}
                     <div className="store-meta">
                       <span>{st?.logs ?? 0} logs</span>
-                      <span>{((st?.discarded_ml ?? 0) / 1000).toFixed(2).replace(/\.?0+$/, '') || 0} L discarded</span>
+                      <span>{formatGrams(dripTenths(st?.discarded_ml ?? 0))} drip discarded</span>
                       <span title={s.coord_evidence}>{s.lat != null ? `GPS ${s.radius_m} m${s.coord_evidence && s.coord_evidence !== 'Confirmed' ? ' (unconfirmed)' : ''}` : 'No GPS lock'}</span>
                       <span>{s.espresso_mode === 'single' ? '1 espresso' : 'Hot + cold'}</span>
                     </div>

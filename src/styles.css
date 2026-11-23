@@ -3628,3 +3628,25 @@ button.batch-tr:hover {
     color: #f5ede3;
   }
 }
+
+.seg-esp {
+  background: var(--ink);
+}
+
+.chip-stack {
+  flex-direction: column;
+  gap: 0;
+  line-height: 1.15;
+  height: 60px;
+}
+.chip-stack small {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+}
+.litre-grams {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--tan-deep);
+  letter-spacing: 0;
+}

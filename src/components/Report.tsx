@@ -1,8 +1,8 @@
 import type { Batch, StoreInfo } from '../../shared/config';
-import { formatDose, formatGrams, thrownTenths } from '../../shared/config';
+import { formatDose, formatGrams, thrownTenths, dripTenths } from '../../shared/config';
 import type { Strings } from '../lib/i18n';
 import { slotLabel } from '../lib/i18n';
-import { batchOutcome, discardByBean, litres } from '../lib/board';
+import { batchOutcome, discardByBean } from '../lib/board';
 import { clock, formatDay, dayKey } from '../lib/time';
 import { Logo } from './Logo';
 import { Grams } from './Grams';
@@ -87,12 +87,12 @@ export function ReportPages({ t, lang, store, day, batches, generatedAt }: { t: 
                     </div>
                     <div className="pdf-bean-body">
                       <span className="pdf-bean-value">
-                        {litres(byBean[bean].hot + byBean[bean].iced)} <small>{t.litres}</small>
+                        <Grams tenths={dripTenths(byBean[bean].hot + byBean[bean].iced)} lang={lang} />
                       </span>
                       <span className="pdf-bean-split">
-                        {t.hotShort} <b>{litres(byBean[bean].hot)} {t.litres}</b>
+                        {t.hotShort} <b><Grams tenths={dripTenths(byBean[bean].hot)} lang={lang} /></b>
                         <i />
-                        {t.icedShort} <b>{litres(byBean[bean].iced)} {t.litres}</b>
+                        {t.icedShort} <b><Grams tenths={dripTenths(byBean[bean].iced)} lang={lang} /></b>
                       </span>
                     </div>
                   </div>
@@ -168,7 +168,7 @@ function Row({ t, b, all, now }: { t: Strings; b: Batch; all: Batch[]; now: numb
       <span className="c-dose" dir="ltr">{b.d1 != null ? `${formatDose(b.d1)} · ${formatDose(b.d2)}` : ''}</span>
       <span className="c-by">{b.n}</span>
       <span className="c-end" dir="ltr">{clock(b.x)}</span>
-      <span className="c-disc" dir="ltr">{b.dl ? `${b.dl / 1000} ${t.litres}` : b.w1 || b.w2 ? `D1×${b.w1 ?? 0} D2×${b.w2 ?? 0} · ${formatGrams(b.wg ?? thrownTenths(b.w1, b.w2))}` : ''}</span>
+      <span className="c-disc" dir="ltr">{b.dl ? `${b.dl / 1000} L · ${formatGrams(dripTenths(b.dl))}` : b.w1 || b.w2 ? `D1×${b.w1 ?? 0} D2×${b.w2 ?? 0} · ${formatGrams(b.wg ?? thrownTenths(b.w1, b.w2))}` : ''}</span>
       <span className="c-status">{statusText}</span>
     </div>
   );

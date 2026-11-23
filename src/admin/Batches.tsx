@@ -3,7 +3,7 @@ import { motion } from 'motion/react';
 import { toast } from 'sonner';
 import { adminApi, type AdminStore, type BatchesResponse } from '../lib/api';
 import { addDays } from '../lib/time';
-import { formatDose, formatGrams, beanOf, type BeanKey } from '../../shared/config';
+import { formatDose, formatGrams, beanOf, dripTenths, type BeanKey } from '../../shared/config';
 import { Sheet } from '../components/Sheet';
 
 const RANGES = [
@@ -50,7 +50,8 @@ interface BatchAgg {
   last: string;
 }
 
-const L = (ml: number) => (ml / 1000).toFixed(2).replace(/\.?0+$/, '') || '0';
+/** Drip ml → coffee weight text (1 L = 70 g). */
+const G = (ml: number) => formatGrams(dripTenths(ml));
 /** Average grinder setting rounded to the 5-step scale (6:33 → 6:35). */
 const avgDose = (sum: number, n: number) => (n ? formatDose(Math.round(sum / n / 5) * 5) : '–');
 
@@ -123,14 +124,14 @@ export function BatchesPanel({ stores, today }: { stores: AdminStore[]; today: s
   }, [data, stores, bean, q]);
 
   const exportCsv = () => {
-    const head = ['Batch', 'Bean', 'Stores', 'Calibrations', 'Drip discarded L', 'Drip L per batch brewed', 'Espresso thrown g', 'Espresso g per calibration', 'Dose 1 avg', 'Dose 1 range', 'Dose 2 avg', 'Dose 2 range', 'First day', 'Last day'];
+    const head = ['Batch', 'Bean', 'Stores', 'Calibrations', 'Drip discarded g', 'Drip g per batch brewed', 'Espresso thrown g', 'Espresso g per calibration', 'Dose 1 avg', 'Dose 1 range', 'Dose 2 avg', 'Dose 2 range', 'First day', 'Last day'];
     const lines = batches.map((a) => [
       a.bn,
       BEAN_LABEL[a.bean],
       a.stores.size,
       a.logs,
-      a.bean === 'espresso' ? '' : L(a.ml),
-      a.bean === 'espresso' ? '' : L(a.logs ? a.ml / a.logs : 0),
+      a.bean === 'espresso' ? '' : (dripTenths(a.ml) / 10).toFixed(1),
+      a.bean === 'espresso' ? '' : (a.logs ? dripTenths(a.ml) / 10 / a.logs : 0).toFixed(1),
       a.bean === 'espresso' ? (a.wg / 10).toFixed(1) : '',
       a.bean === 'espresso' && a.logs ? (a.wg / 10 / a.logs).toFixed(1) : '',
       a.bean === 'espresso' ? avgDose(a.sd1, a.espLogs) : '',
@@ -174,7 +175,7 @@ export function BatchesPanel({ stores, today }: { stores: AdminStore[]; today: s
         </button>
       </div>
       <p className="muted small" style={{ marginTop: 0 }}>
-        Grouped by bean, highest waste per calibration first. Tap a batch to see each store. Drip: litres thrown per batch brewed. Espresso: grams thrown per calibration and the grinder settings used.
+        Grouped by bean, highest waste per calibration first. Tap a batch to see each store. All waste in coffee weight (drip 1 L = 70 g). Espresso also shows the grinder settings used.
       </p>
 
       {!data ? (
@@ -209,9 +210,9 @@ export function BatchesPanel({ stores, today }: { stores: AdminStore[]; today: s
               </span>
               <span>{a.stores.size}</span>
               <span className="num">{a.logs}</span>
-              <span className="num">{a.bean === 'espresso' ? formatGrams(a.wg) : `${L(a.ml)} L`}</span>
+              <span className="num">{a.bean === 'espresso' ? formatGrams(a.wg) : G(a.ml)}</span>
               <span className="num">
-                <b>{a.bean === 'espresso' ? (a.logs ? formatGrams(Math.round(a.wg / a.logs)) : '–') : `${L(a.logs ? a.ml / a.logs : 0)} L`}</b>
+                <b>{a.logs ? formatGrams(Math.round((a.bean === 'espresso' ? a.wg : dripTenths(a.ml)) / a.logs)) : '–'}</b>
               </span>
               <span className="num">{a.bean === 'espresso' ? `${avgDose(a.sd1, a.espLogs)} · ${avgDose(a.sd2, a.espLogs)}` : '—'}</span>
               <span className="num small muted">{a.first === a.last ? a.first.slice(5) : `${a.first.slice(5)} → ${a.last.slice(5)}`}</span>
@@ -234,8 +235,8 @@ export function BatchesPanel({ stores, today }: { stores: AdminStore[]; today: s
                 </>
               ) : (
                 <>
-                  <Kpi label="Discarded" value={`${L(open.ml)} L`} sub={`Hot ${L(open.mlHot)} · Iced ${L(open.mlIced)}`} />
-                  <Kpi label="Per batch brewed" value={`${L(open.logs ? open.ml / open.logs : 0)} L`} sub={`${open.discards} discards`} />
+                  <Kpi label="Discarded" value={G(open.ml)} sub={`Hot ${G(open.mlHot)} · Iced ${G(open.mlIced)}`} />
+                  <Kpi label="Per batch brewed" value={open.logs ? formatGrams(Math.round(dripTenths(open.ml) / open.logs)) : '–'} sub={`${open.discards} discards`} />
                 </>
               )}
             </div>
@@ -252,7 +253,7 @@ export function BatchesPanel({ stores, today }: { stores: AdminStore[]; today: s
                       </span>
                       <span className="num">{s.logs} calibr.</span>
                       <span className="num">
-                        <b>{open.bean === 'espresso' ? formatGrams(s.wg) : `${L(s.ml)} L`}</b>
+                        <b>{open.bean === 'espresso' ? formatGrams(s.wg) : G(s.ml)}</b>
                       </span>
                       <span className="num small muted">{s.first === s.last ? s.first.slice(5) : `${s.first.slice(5)} → ${s.last.slice(5)}`}</span>
                     </div>
@@ -268,7 +269,7 @@ export function BatchesPanel({ stores, today }: { stores: AdminStore[]; today: s
 
 function wastePer(a: BatchAgg) {
   if (!a.logs) return 0;
-  return a.bean === 'espresso' ? a.wg / a.logs : a.ml / a.logs;
+  return (a.bean === 'espresso' ? a.wg : dripTenths(a.ml)) / a.logs;
 }
 
 function Kpi({ label, value, sub }: { label: string; value: string; sub?: string }) {

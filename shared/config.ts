@@ -60,6 +60,13 @@ export function stepDose(v: number, part: 'major' | 'minor', dir: 1 | -1): numbe
 
 /** Espresso shots thrown while calibrating (per dose). */
 export const MAX_THROWN = 50;
+/** Drip waste is recorded in millilitres of brewed coffee and reported as coffee weight: 1 L = 70 g. */
+export const DRIP_G_PER_L = 70;
+/** Brewed drip (ml) → coffee weight in tenths of a gram. */
+export function dripTenths(ml: number): number {
+  return Math.round((ml * DRIP_G_PER_L) / 100);
+}
+
 /** Coffee weight of one shot, in tenths of a gram (18.8 g and 25.8 g). */
 export const DOSE_TENTHS_G = { d1: 188, d2: 258 } as const;
 /** Total coffee thrown, in tenths of a gram (stored as an integer to avoid rounding drift). */

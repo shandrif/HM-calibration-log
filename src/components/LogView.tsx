@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
-import { type Batch, type StoreInfo, formatDose, thrownTenths, slotsFor } from '../../shared/config';
+import { type Batch, type StoreInfo, formatDose, thrownTenths, slotsFor, dripTenths } from '../../shared/config';
 import { Grams } from './Grams';
 import { useI18n, slotLabel, type Strings } from '../lib/i18n';
 import { addDays, clock, dayKey, formatDay, nowMs } from '../lib/time';
-import { batchOutcome, discardByBean, litres, slotView } from '../lib/board';
+import { batchOutcome, discardByBean, slotView } from '../lib/board';
 import { buildPdf, canShareFile, downloadFile } from '../lib/pdf';
 import { IconChevron, IconDownload, IconShare, IconDrop, IconCalendar } from './Icons';
 import { CalendarSheet } from './CalendarSheet';
@@ -150,14 +150,14 @@ export function LogView({
                 <i className={bean === 'ethiopian' ? 'dot-eth' : 'dot-bra'} /> {t[bean]}
               </div>
               <div className="bean-value num">
-                {batches ? litres(byBean[bean].hot + byBean[bean].iced) : '–'} <small>{t.litres}</small>
+                {batches ? <Grams tenths={dripTenths(byBean[bean].hot + byBean[bean].iced)} lang={lang} /> : '–'}
               </div>
               <div className="bean-split num">
                 <span>
-                  {t.hotShort} <b>{litres(byBean[bean].hot)}</b>
+                  {t.hotShort} <b><Grams tenths={dripTenths(byBean[bean].hot)} lang={lang} /></b>
                 </span>
                 <span>
-                  {t.icedShort} <b>{litres(byBean[bean].iced)}</b>
+                  {t.icedShort} <b><Grams tenths={dripTenths(byBean[bean].iced)} lang={lang} /></b>
                 </span>
               </div>
             </div>
@@ -346,7 +346,7 @@ function LogSections({ batches, now }: { batches: Batch[]; now: number }) {
                         )}
                         {!!b.dl && (
                           <span className="c-d-waste">
-                            <IconDrop /> <bdi dir="ltr">{b.dl / 1000}</bdi> {t.litres}
+                            <IconDrop /> <Grams tenths={dripTenths(b.dl)} lang={lang} />
                           </span>
                         )}
                         {b.d1 == null && !b.dl && <span className="muted">—</span>}

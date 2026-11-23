@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { toast } from 'sonner';
-import { type Batch, type StoreInfo, type BeanKey, slotsFor, DISCARD_QUICK_ML, MAX_THROWN, DOSE_TENTHS_G, thrownTenths, beanOf, BEAN_KEYS, normalizeBatch } from '../shared/config';
+import { type Batch, type StoreInfo, type BeanKey, slotsFor, DISCARD_QUICK_ML, MAX_THROWN, DOSE_TENTHS_G, thrownTenths, beanOf, BEAN_KEYS, normalizeBatch, dripTenths } from '../shared/config';
 import { api, ApiError } from './lib/api';
 import { useI18n, fmt, slotLabel } from './lib/i18n';
 import { useNow, setServerNow, nowMs, clock, dayKey } from './lib/time';
@@ -886,7 +886,7 @@ function StaffSheet({
 // ---------------------------------------------------------------- discard
 
 function DiscardSheet({ state, onClose, onSave }: { state: null | { id: string; label: string }; onClose: () => void; onSave: (ml: number) => void }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const [custom, setCustom] = useState<number | null>(null);
   const [left, setLeft] = useState(10);
   useEffect(() => {
@@ -922,8 +922,13 @@ function DiscardSheet({ state, onClose, onSave }: { state: null | { id: string; 
                   {t.discardNone}
                 </button>
                 {DISCARD_QUICK_ML.map((ml) => (
-                  <button key={ml} className="chip chip-lg" onClick={() => onSave(ml)}>
-                    <span className="num">{litres(ml)}</span>&nbsp;{t.litres}
+                  <button key={ml} className="chip chip-lg chip-stack" onClick={() => onSave(ml)}>
+                    <span>
+                      <span className="num">{litres(ml)}</span>&nbsp;{t.litres}
+                    </span>
+                    <small>
+                      <Grams tenths={dripTenths(ml)} lang={lang} />
+                    </small>
                   </button>
                 ))}
                 <button className="chip chip-lg" onClick={() => setCustom(1000)}>
@@ -941,6 +946,9 @@ function DiscardSheet({ state, onClose, onSave }: { state: null | { id: string; 
               </button>
               <div className="litre-value num">
                 {(custom / 1000).toFixed(2).replace(/\.?0+$/, '')} <small>{t.litres}</small>
+                <div className="litre-grams">
+                  = <Grams tenths={dripTenths(custom)} lang={lang} />
+                </div>
               </div>
               <button className="round-btn" onClick={() => setCustom(Math.min(50000, custom + 250))} aria-label="+">
                 <IconPlus />

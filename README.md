@@ -38,6 +38,10 @@ Each store keeps the current batch (lot) number for **Espresso**, **Ethiopian** 
 
 `/admin` → **Batches**: results per batch for 7 / 30 / 92 days — stores, calibrations, drip litres discarded (and per batch brewed), espresso grams thrown (and per calibration), average and range of grinder settings, first/last day used; tap a batch for the per-store breakdown; CSV export. A nightly summary (`batch_daily`, one row per day) keeps it cheap.
 
+## Waste in coffee weight
+
+All waste is reported as coffee weight (g / kg). Staff still choose litres for thrown drip; it is converted at **1 L = 70 g** (`DRIP_G_PER_L` in `shared/config.ts`). Espresso shots: dose 1 = 18.8 g, dose 2 = 25.8 g.
+
 ## Bean waste report
 
 `/admin` → **Bean waste**: litres of Ethiopian and Brazilian drip discarded (hot/iced split) for today, 7, 30 or 92 days, grouped by store, area manager, ROM or city, with CSV export. Finished days come from a nightly summary (one row per day), so the report stays cheap on the free tier.
