@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
 import { type Batch, type StoreInfo, formatDose, thrownTenths } from '../../shared/config';
@@ -26,22 +26,45 @@ export function LogView({
   const today = dayKey(nowMs());
   const [day, setDay] = useState(today);
   const [fetched, setFetched] = useState<{ day: string; batches: Batch[] } | null>(null);
+  const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState<'pdf' | 'share' | null>(null);
+
+  // Parents pass new function objects on every render (the board clock ticks each second),
+  // so keep them in refs: the effect below must only run when the selected day changes.
+  const fetchRef = useRef(fetchDay);
+  const authRef = useRef(onAuthError);
+  const failedText = useRef(t.failed);
+  fetchRef.current = fetchDay;
+  authRef.current = onAuthError;
+  failedText.current = t.failed;
+
+  // Past days don't change, so each one is fetched once per visit and then served from memory.
+  const cache = useRef(new Map<string, Batch[]>());
 
   const useLive = !!liveBatches && day === today;
   useEffect(() => {
     if (useLive) return;
+    const hit = cache.current.get(day);
+    if (hit) {
+      setFetched({ day, batches: hit });
+      if (day !== today) return; // today's list (admin) is refreshed below while the cached copy shows
+    }
     let cancelled = false;
-    setFetched(null);
-    fetchDay(day)
-      .then((r) => !cancelled && setFetched({ day, batches: r.batches }))
+    setLoading(true);
+    fetchRef
+      .current(day)
+      .then((r) => {
+        cache.current.set(day, r.batches);
+        if (!cancelled) setFetched({ day, batches: r.batches });
+      })
       .catch((e) => {
-        if (!onAuthError?.(e)) toast.error(t.failed);
-      });
+        if (!cancelled && !authRef.current?.(e)) toast.error(failedText.current);
+      })
+      .finally(() => !cancelled && setLoading(false));
     return () => {
       cancelled = true;
     };
-  }, [day, useLive, fetchDay, onAuthError, t]);
+  }, [day, useLive, today]);
 
   const batches = useLive ? liveBatches!.filter((b) => dayKey(b.t) === day) : fetched?.day === day ? fetched.batches : null;
   const oldest = addDays(today, -RETENTION + 1);
@@ -76,7 +99,7 @@ export function LogView({
         <button className="icon-btn" onClick={() => setDay(addDays(day, -1))} disabled={day <= oldest} aria-label={t.prevDay}>
           <IconChevron dir={lang === 'ar' ? 'right' : 'left'} />
         </button>
-        <label className="daynav-label">
+        <label className="daynav-label" data-loading={loading || undefined}>
           <span>{day === today ? t.today : formatDay(day, lang)}</span>
           <input type="date" value={day} min={oldest} max={today} onChange={(e) => e.target.value && setDay(e.target.value)} aria-label={t.today} />
         </label>

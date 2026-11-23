@@ -2144,3 +2144,10 @@ button:disabled {
   margin: 0 4px;
   background: rgba(29, 27, 23, 0.2);
 }
+
+.daynav-label {
+  transition: opacity 200ms var(--ease-out);
+}
+.daynav-label[data-loading] {
+  opacity: 0.45;
+}
