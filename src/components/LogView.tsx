@@ -207,6 +207,11 @@ export function LogView({
                   </div>
                   <div className="entry-meta">
                     <span>{b.n}</span>
+                    {b.bn && (
+                      <span className="entry-batch num" dir="ltr">
+                        #{b.bn}
+                      </span>
+                    )}
                     {b.d1 != null && (
                       <span className="num" dir="ltr">
                         {formatDose(b.d1)} · {formatDose(b.d2)}

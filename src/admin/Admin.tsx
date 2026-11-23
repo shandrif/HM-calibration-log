@@ -9,6 +9,7 @@ import { getFix } from '../lib/geo';
 import { setServerNow, shortDuration } from '../lib/time';
 import type { StoreInfo } from '../../shared/config';
 import { WastePanel } from './Waste';
+import { BatchesPanel } from './Batches';
 
 // Head-office screen. English only (internal tool).
 
@@ -18,7 +19,7 @@ export function Admin() {
   const [edit, setEdit] = useState<Partial<AdminStore> | null>(null);
   const [viewing, setViewing] = useState<AdminStore | null>(null);
   const [q, setQ] = useState('');
-  const [tab, setTab] = useState<'stores' | 'waste'>('stores');
+  const [tab, setTab] = useState<'stores' | 'waste' | 'batches'>('stores');
   const [filter, setFilter] = useState({ city: '', rom: '', area_manager: '' });
   const [pinList, setPinList] = useState<{ code: string; name: string; pin: string }[] | null>(null);
 
@@ -98,9 +99,14 @@ export function Admin() {
           <button data-active={tab === 'waste' || undefined} onClick={() => setTab('waste')}>
             Bean waste
           </button>
+          <button data-active={tab === 'batches' || undefined} onClick={() => setTab('batches')}>
+            Batches
+          </button>
         </div>
 
-        {tab === 'waste' ? (
+        {tab === 'batches' ? (
+          <BatchesPanel stores={filtered} today={data.today} />
+        ) : tab === 'waste' ? (
           <WastePanel stores={filtered} today={data.today} filterNote={[filter.city, filter.rom, filter.area_manager, q.trim()].filter(Boolean).join(' · ')} />
         ) : (
           <>
@@ -273,6 +279,7 @@ function toInfo(s: AdminStore): StoreInfo {
     staff: [],
     last_doses: {},
     geofence: s.lat != null,
+    beans: {},
   };
 }
 

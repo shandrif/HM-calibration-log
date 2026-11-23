@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { toast } from 'sonner';
-import { type Batch, type StoreInfo, slotsFor, DISCARD_QUICK_ML, MAX_THROWN, DOSE_TENTHS_G, thrownTenths } from '../shared/config';
+import { type Batch, type StoreInfo, type BeanKey, slotsFor, DISCARD_QUICK_ML, MAX_THROWN, DOSE_TENTHS_G, thrownTenths, beanOf, BEAN_KEYS, normalizeBatch } from '../shared/config';
 import { api, ApiError } from './lib/api';
 import { useI18n, fmt, slotLabel } from './lib/i18n';
 import { useNow, setServerNow, nowMs, clock, dayKey } from './lib/time';
@@ -280,7 +280,28 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
     }
   };
 
-  const onPrimary = (view: SlotView) => {
+  // ---------------------------------------------------------------- bean batches
+  const [beanSheet, setBeanSheet] = useState<null | { bean: BeanKey; then?: () => void }>(null);
+  const [skippedBeans, setSkippedBeans] = useState<Set<BeanKey>>(new Set());
+  /** First log of a bean with no batch number: ask once (can be skipped for this visit). */
+  const ensureBatch = (bean: BeanKey, cont: () => void) => {
+    if (store.beans?.[bean]?.cur || skippedBeans.has(bean)) cont();
+    else setBeanSheet({ bean, then: cont });
+  };
+  const saveBean = async (bean: BeanKey, batch: string) => {
+    try {
+      const r = await api.setBean(bean, batch, lastBy || onShift[0] || '');
+      setStore({ ...store, beans: r.beans });
+      toast.success(`${t[bean === 'espresso' ? 'espresso' : bean]} · ${t.batch} ${batch}`);
+      return true;
+    } catch (e) {
+      handleError(e);
+      return false;
+    }
+  };
+
+  const onPrimary = (view: SlotView) => ensureBatch(beanOf(view.def.slot), () => onPrimaryInner(view));
+  const onPrimaryInner = (view: SlotView) => {
     if (view.def.kind === 'espresso') {
       const last = store.last_doses[view.def.slot] ?? store.last_doses.espresso_hot ?? store.last_doses.espresso ?? [630, 870];
       const open = (by: string) => setEspressoSheet({ slot: view.def.slot, d1: last[0], d2: last[1], w1: 0, w2: 0, by });
@@ -380,6 +401,8 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
             transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
           >
             {tab === 'board' && (
+              <>
+              <BeanStrip beans={store.beans ?? {}} onPick={(bean) => setBeanSheet({ bean })} />
               <div className="board">
                 {groups.map((g, gi) => {
                   const vs = views.filter((v) => v.def.group === g.key);
@@ -414,6 +437,7 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
                   );
                 })}
               </div>
+              </>
             )}
             {tab === 'log' && <LogView store={store} fetchDay={(d) => api.log(d)} fetchDays={() => api.logDays()} liveBatches={batches} onAuthError={onAuthError} />}
             {tab === 'more' && (
@@ -558,6 +582,27 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
         )}
       </Sheet>
 
+      <BeanSheet
+        state={beanSheet}
+        current={beanSheet ? store.beans?.[beanSheet.bean] : undefined}
+        onClose={() => setBeanSheet(null)}
+        onSkip={() => {
+          if (!beanSheet) return;
+          const { bean, then } = beanSheet;
+          setSkippedBeans(new Set([...skippedBeans, bean]));
+          setBeanSheet(null);
+          then?.();
+        }}
+        onSave={async (batch) => {
+          if (!beanSheet) return;
+          const { bean, then } = beanSheet;
+          if (await saveBean(bean, batch)) {
+            setBeanSheet(null);
+            then?.();
+          }
+        }}
+      />
+
       <DiscardSheet
         state={discardSheet}
         onClose={() => setDiscardSheet(null)}
@@ -603,6 +648,118 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
       </Sheet>
 
     </div>
+  );
+}
+
+// ---------------------------------------------------------------- bean batches
+
+function BeanStrip({ beans, onPick }: { beans: StoreInfo['beans']; onPick: (b: BeanKey) => void }) {
+  const { t } = useI18n();
+  return (
+    <div className="bean-strip" role="group" aria-label={t.batches}>
+      {BEAN_KEYS.map((b) => {
+        const cur = beans?.[b]?.cur;
+        return (
+          <button key={b} className="bean-chip" data-bean={b} data-missing={!cur || undefined} onClick={() => onPick(b)}>
+            <span className="bean-chip-name">{t[b === 'espresso' ? 'espresso' : b]}</span>
+            <span className="bean-chip-batch num" dir="ltr">
+              {cur ? `#${cur}` : t.addBatch}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function BeanSheet({
+  state,
+  current,
+  onClose,
+  onSave,
+  onSkip,
+}: {
+  state: null | { bean: BeanKey; then?: () => void };
+  current?: { cur: string; recent: string[]; at: number; by: string };
+  onClose: () => void;
+  onSave: (batch: string) => Promise<void>;
+  onSkip: () => void;
+}) {
+  const { t } = useI18n();
+  const [value, setValue] = useState('');
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    if (state) setValue('');
+  }, [state]);
+  if (!state) return <Sheet open={false} onOpenChange={() => {}} title="">{null}</Sheet>;
+  const name = t[state.bean === 'espresso' ? 'espresso' : state.bean];
+  const valid = normalizeBatch(value);
+  const submit = async (v: string) => {
+    setSaving(true);
+    await onSave(v);
+    setSaving(false);
+  };
+  return (
+    <Sheet open onOpenChange={(o) => !o && onClose()} title={`${name} · ${t.batchNumber}`}>
+      <form
+        className="sheet-body"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (valid) void submit(valid);
+        }}
+      >
+        {state.then && !current?.cur && <p className="sheet-text muted">{t.batchFirstTime}</p>}
+        {current?.cur && (
+          <div className="batch-current">
+            <span className="muted small">{t.batchInUse}</span>
+            <span className="batch-current-value num" dir="ltr">
+              #{current.cur}
+            </span>
+            {current.by && (
+              <span className="muted small">
+                {current.by} · {clock(current.at)}
+              </span>
+            )}
+          </div>
+        )}
+        <label className="field">
+          <span>{current?.cur ? t.newBagBatch : t.batchNumber}</span>
+          <input
+            className="input input-lg num"
+            dir="ltr"
+            value={value}
+            onChange={(e) => setValue(e.target.value.toUpperCase())}
+            placeholder="A1234"
+            autoCapitalize="characters"
+            autoComplete="off"
+            autoCorrect="off"
+            spellCheck={false}
+            enterKeyHint="done"
+            maxLength={30}
+          />
+        </label>
+        {!!current?.recent?.length && (
+          <div className="batch-recent">
+            <span className="muted small">{t.recentBatches}</span>
+            <div className="by-chips">
+              {current.recent.map((r) => (
+                <button type="button" key={r} className="chip num" dir="ltr" onClick={() => void submit(r)}>
+                  #{r}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        <button className="btn btn-primary btn-lg" disabled={!valid || saving}>
+          {t.saveBatch}
+        </button>
+        {state.then && (
+          <button type="button" className="btn btn-ghost" onClick={onSkip}>
+            {t.skipForNow}
+          </button>
+        )}
+      </form>
+    </Sheet>
   );
 }
 

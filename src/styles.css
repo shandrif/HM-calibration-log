@@ -1539,7 +1539,7 @@ button:disabled {
 }
 .pdf-row {
   display: grid;
-  grid-template-columns: 50px 0.9fr 1fr 1.1fr 52px 132px 64px;
+  grid-template-columns: 46px 0.8fr 0.8fr 0.95fr 1fr 48px 120px 60px;
   gap: 8px;
   align-items: center;
   border-bottom: 1px solid #efe4d6;
@@ -2915,5 +2915,198 @@ body {
   :root:not([data-theme='light']) .cal-day[data-selected] {
     background: linear-gradient(180deg, #f5ede3 0%, #e0cfb6 100%);
     color: #1d1b17;
+  }
+}
+
+/* ---------------------------------------------------------------- bean batches */
+.bean-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 18px;
+}
+.bean-chip {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  min-width: 0;
+  padding: 9px 12px 9px 14px;
+  border-radius: 16px;
+  text-align: start;
+  background-color: var(--glass);
+  background-image: var(--glass-highlight);
+  box-shadow: var(--shadow-sm);
+  transition:
+    transform 160ms var(--ease-out),
+    box-shadow 200ms var(--ease-out);
+}
+.bean-chip::before {
+  content: '';
+  position: absolute;
+  inset-block: 10px;
+  inset-inline-start: 0;
+  width: 3px;
+  border-radius: 99px;
+  background: var(--ink);
+}
+.bean-chip[data-bean='ethiopian']::before {
+  background: var(--tan-deep);
+}
+.bean-chip[data-bean='brazilian']::before {
+  background: var(--teal-deep);
+}
+.bean-chip:active {
+  transform: scale(0.97);
+}
+.bean-chip-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.bean-chip-batch {
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.bean-chip[data-missing] .bean-chip-batch {
+  color: var(--tan-deep);
+}
+.bean-chip[data-missing] {
+  box-shadow:
+    inset 0 0 0 1.5px color-mix(in srgb, var(--tan) 70%, transparent),
+    var(--shadow-sm);
+}
+@media (min-width: 1100px) {
+  .bean-strip {
+    max-width: 640px;
+  }
+}
+.batch-current {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--surface-2);
+}
+.batch-current-value {
+  font-size: 22px;
+  font-weight: 700;
+}
+.batch-recent {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.entry-batch {
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+/* admin: batches */
+.batch-table {
+  display: flex;
+  flex-direction: column;
+}
+.batch-tr {
+  display: grid;
+  grid-template-columns: minmax(130px, 1.4fr) 60px 70px 90px 100px 120px 110px;
+  gap: 10px;
+  align-items: center;
+  min-height: 54px;
+  padding: 6px 8px;
+  border-top: 1px solid var(--line);
+  border-radius: 12px;
+  font-size: 14px;
+  text-align: start;
+  transition: background-color 160ms var(--ease-out);
+}
+.batch-tr > .num {
+  text-align: end;
+}
+button.batch-tr:hover {
+  background: rgba(255, 255, 255, 0.5);
+}
+.batch-th {
+  min-height: 34px;
+  border-top: 0;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.batch-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.batch-name b,
+.batch-name small {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.batch-name small {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.batch-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 10px;
+}
+.batch-kpi {
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--surface-2);
+}
+.batch-kpi-value {
+  font-size: 22px;
+  font-weight: 700;
+}
+.batch-stores {
+  display: flex;
+  flex-direction: column;
+}
+.batch-store {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  gap: 12px;
+  align-items: center;
+  min-height: 50px;
+  border-top: 1px solid var(--line);
+  font-size: 14px;
+}
+@media (max-width: 760px) {
+  .batch-tr {
+    grid-template-columns: minmax(0, 1fr) 60px 80px;
+  }
+  .batch-tr > :nth-child(n + 4):not(:nth-child(5)) {
+    display: none;
+  }
+  .batch-th > :nth-child(5) {
+    display: none;
+  }
+  .batch-tr > :nth-child(2) {
+    display: none;
+  }
+  .batch-tr {
+    grid-template-columns: minmax(0, 1fr) 60px 90px;
   }
 }

@@ -137,6 +137,7 @@ function HeaderRow({ t }: { t: Strings }) {
     <div className="pdf-row pdf-row-head" style={{ height: ROW_H }}>
       <span className="c-time">{t.time}</span>
       <span className="c-item">{t.item}</span>
+      <span className="c-bn">{t.batch}</span>
       <span className="c-dose">{t.doses}</span>
       <span className="c-by">{t.by}</span>
       <span className="c-end">{t.ends}</span>
@@ -163,6 +164,7 @@ function Row({ t, b, all, now }: { t: Strings; b: Batch; all: Batch[]; now: numb
     <div className="pdf-row" data-outcome={outcome} style={{ height: ROW_H }}>
       <span className="c-time" dir="ltr">{clock(b.t)}</span>
       <span className="c-item">{label.item}</span>
+      <span className="c-bn" dir="ltr">{b.bn ?? ''}</span>
       <span className="c-dose" dir="ltr">{b.d1 != null ? `${formatDose(b.d1)} · ${formatDose(b.d2)}` : ''}</span>
       <span className="c-by">{b.n}</span>
       <span className="c-end" dir="ltr">{clock(b.x)}</span>

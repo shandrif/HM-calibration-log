@@ -100,9 +100,30 @@ export interface Batch {
   w1?: number; // espresso: dose 1 shots thrown during calibration
   w2?: number; // espresso: dose 2 shots thrown during calibration
   wg?: number; // espresso: coffee thrown, tenths of a gram (w1 × 18.8 g + w2 × 25.8 g at the time of logging)
+  bn?: string; // bean batch (lot) number in use when this was logged
   dl?: number; // ml discarded from the previous batch of this slot
   v?: number; // voided at
   m?: number; // distance from store (m) when logged
+}
+
+/** Beans that carry a batch (lot) number. Hot and cold espresso share one espresso batch;
+ * hot and iced drip share the batch of their origin. */
+export type BeanKey = 'espresso' | 'ethiopian' | 'brazilian';
+export const BEAN_KEYS: BeanKey[] = ['espresso', 'ethiopian', 'brazilian'];
+export function beanOf(slot: string): BeanKey {
+  if (slot.startsWith('espresso')) return 'espresso';
+  return slot.endsWith(':brazilian') ? 'brazilian' : 'ethiopian';
+}
+export interface BeanBatch {
+  cur: string; // current batch number ('' = not set)
+  recent: string[]; // previously used, newest first
+  at: number;
+  by: string;
+}
+/** Letters, digits and - _ / . — up to 30 characters, stored upper-case. */
+export function normalizeBatch(v: unknown): string | null {
+  const s = String(v ?? '').trim().toUpperCase().replace(/\s+/g, '');
+  return /^[A-Z0-9][A-Z0-9\-_/.]{0,29}$/.test(s) ? s : null;
 }
 
 export interface StoreInfo {
@@ -114,6 +135,7 @@ export interface StoreInfo {
   staff: string[];
   last_doses: Record<string, [number, number]>;
   geofence: boolean;
+  beans: Partial<Record<BeanKey, BeanBatch>>;
 }
 
 export interface StateResponse {

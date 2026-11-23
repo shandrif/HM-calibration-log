@@ -10,6 +10,11 @@ import {
   isValidDiscard,
   isValidThrown,
   thrownTenths,
+  beanOf,
+  normalizeBatch,
+  BEAN_KEYS,
+  type BeanKey,
+  type BeanBatch,
   dayKey,
   GEOFENCE_DEFAULT_M,
 } from '../shared/config';
@@ -45,6 +50,7 @@ type StoreRow = {
   espresso_mode: EspressoMode;
   staff: string;
   last_doses: string;
+  beans: string;
   active: number;
   fail_count: number;
   locked_until: number;
@@ -73,6 +79,7 @@ function storeInfo(s: StoreRow): StoreInfo {
     staff: safeJson<string[]>(s.staff, []),
     last_doses: safeJson(s.last_doses, {}),
     geofence: s.lat != null && s.lng != null,
+    beans: safeJson(s.beans, {}),
   };
 }
 
@@ -194,6 +201,8 @@ app.post('/api/batches', requireStore, async (c) => {
     if (body.w1 || body.w2) batch.wg = thrownTenths(body.w1, body.w2);
   }
   if (geo.distance != null) batch.m = geo.distance;
+  const bn = safeJson<Partial<Record<BeanKey, BeanBatch>>>(store.beans, {})[beanOf(def.slot)]?.cur;
+  if (bn) batch.bn = bn;
   const day = dayKey(now, tz(c.env));
   const json = JSON.stringify(batch);
   const stmts = [
@@ -245,6 +254,26 @@ app.post('/api/batches/:id/discard', requireStore, async (c) => {
   // Allowed for 30 minutes after the batch started.
   const ok = await patchBatch(c.env, store.id, day, c.req.param('id') ?? '', 'dl', ml, `json_extract(j.value, '$.t') > ?5 - 1800000`);
   return ok ? c.json({ ok: true }) : err(c, 409, 'too_late');
+});
+
+/** Change the current batch (lot) number of one bean for this store. */
+app.put('/api/beans', requireStore, async (c) => {
+  const store = c.get('store');
+  const b = await readBody<{ bean?: string; batch?: string; by?: string }>(c);
+  const bean = String(b.bean) as BeanKey;
+  if (!BEAN_KEYS.includes(bean)) return err(c, 400, 'bad_bean');
+  const batch = normalizeBatch(b.batch);
+  if (!batch) return err(c, 400, 'bad_batch');
+  const by = String(b.by ?? '').trim().slice(0, 40);
+  const beans = safeJson<Partial<Record<BeanKey, BeanBatch>>>(store.beans, {});
+  const prev = beans[bean];
+  const recent = [prev?.cur, ...(prev?.recent ?? [])].filter((x): x is string => !!x && x !== batch);
+  beans[bean] = { cur: batch, recent: [...new Set(recent)].slice(0, 6), at: Date.now(), by };
+  await c.env.DB.batch([
+    c.env.DB.prepare('UPDATE stores SET beans = ?1 WHERE id = ?2').bind(JSON.stringify(beans), store.id),
+    c.env.DB.prepare('INSERT INTO bean_changes (store_id, bean, batch, by, at) VALUES (?1, ?2, ?3, ?4, ?5)').bind(store.id, bean, batch, by, Date.now()),
+  ]);
+  return c.json({ beans });
 });
 
 app.put('/api/staff', requireStore, async (c) => {
@@ -538,6 +567,38 @@ app.get('/api/admin/waste', requireAdmin, async (c) => {
   return c.json({ from, to, today, totals });
 });
 
+/** Results per bean batch over a range of days (max 92): one entry per store / batch / slot. */
+app.get('/api/admin/batches', requireAdmin, async (c) => {
+  const today = dayKey(Date.now(), tz(c.env));
+  const from = c.req.query('from') ?? today;
+  const to = c.req.query('to') ?? today;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || from > to) return err(c, 400, 'bad_range');
+  const acc = new Map<string, { sid: number; bn: string; slot: string; v: number[]; mn1: number | null; mx1: number | null; mn2: number | null; mx2: number | null; first: string; last: string }>();
+  const add = (day: string, r: BatchRow) => {
+    const key = `${r[0]}|${r[1]}|${r[2]}`;
+    let e = acc.get(key);
+    if (!e) acc.set(key, (e = { sid: r[0], bn: r[1], slot: r[2], v: [0, 0, 0, 0, 0, 0, 0, 0], mn1: null, mx1: null, mn2: null, mx2: null, first: day, last: day }));
+    for (let i = 0; i < 8; i++) e.v[i] += Number(r[3 + i] ?? 0); // logs, ml, n, w1, w2, wg, sd1, sd2
+    const lo = (a: number | null, b: number | null) => (a == null ? b : b == null ? a : Math.min(a, b));
+    const hi = (a: number | null, b: number | null) => (a == null ? b : b == null ? a : Math.max(a, b));
+    e.mn1 = lo(e.mn1, r[11]);
+    e.mx1 = hi(e.mx1, r[12]);
+    e.mn2 = lo(e.mn2, r[13]);
+    e.mx2 = hi(e.mx2, r[14]);
+    if (day < e.first) e.first = day;
+    if (day > e.last) e.last = day;
+  };
+  const { results } = await c.env.DB.prepare('SELECT day, data FROM batch_daily WHERE day >= ?1 AND day <= ?2')
+    .bind(from, to)
+    .all<{ day: string; data: string }>();
+  const covered = new Set(results.map((r) => r.day));
+  for (const r of results) for (const row of safeJson<BatchRow[]>(r.data, [])) add(r.day, row);
+  for (let d = from, guard = 0; d <= to && d <= today && guard < 93; d = nextDay(d), guard++) {
+    if (!covered.has(d)) for (const row of await aggregateBatchDay(c.env, d)) add(d, row);
+  }
+  return c.json({ from, to, rows: [...acc.values()] });
+});
+
 app.post('/api/admin/usage/refresh', requireAdmin, async (c) => {
   if (!c.env.ANALYTICS_TOKEN || !c.env.ACCOUNT_ID) return err(c, 400, 'analytics_not_configured');
   const snap = await refreshUsage(c.env);
@@ -624,6 +685,35 @@ async function aggregateDay(env: Env, day: string) {
   return results;
 }
 
+type BatchRow = [number, string, string, number, number, number, number, number, number, number, number, number | null, number | null, number | null, number | null];
+
+/** Per store / batch / slot totals for one day, computed inside the database. Reset batches are ignored. */
+async function aggregateBatchDay(env: Env, day: string): Promise<BatchRow[]> {
+  const { results } = await env.DB.prepare(
+    `SELECT d.store_id AS sid, json_extract(j.value, '$.bn') AS bn, json_extract(j.value, '$.s') AS slot,
+            COUNT(*) AS logs,
+            SUM(COALESCE(json_extract(j.value, '$.dl'), 0)) AS ml,
+            SUM(CASE WHEN COALESCE(json_extract(j.value, '$.dl'), 0) > 0 THEN 1 ELSE 0 END) AS n,
+            SUM(COALESCE(json_extract(j.value, '$.w1'), 0)) AS w1,
+            SUM(COALESCE(json_extract(j.value, '$.w2'), 0)) AS w2,
+            SUM(COALESCE(json_extract(j.value, '$.wg'),
+                COALESCE(json_extract(j.value, '$.w1'), 0) * 188 + COALESCE(json_extract(j.value, '$.w2'), 0) * 258)) AS wg,
+            SUM(COALESCE(json_extract(j.value, '$.d1'), 0)) AS sd1,
+            SUM(COALESCE(json_extract(j.value, '$.d2'), 0)) AS sd2,
+            MIN(json_extract(j.value, '$.d1')) AS mn1, MAX(json_extract(j.value, '$.d1')) AS mx1,
+            MIN(json_extract(j.value, '$.d2')) AS mn2, MAX(json_extract(j.value, '$.d2')) AS mx2
+     FROM days d, json_each(d.batches) j
+     WHERE d.day = ?1 AND json_extract(j.value, '$.v') IS NULL AND json_extract(j.value, '$.bn') IS NOT NULL
+     GROUP BY d.store_id, bn, slot`,
+  )
+    .bind(day)
+    .all<Record<string, number | string | null>>();
+  return results.map((r) => [
+    Number(r.sid), String(r.bn), String(r.slot), Number(r.logs), Number(r.ml), Number(r.n), Number(r.w1), Number(r.w2), Number(r.wg),
+    Number(r.sd1), Number(r.sd2), r.mn1 as number | null, r.mx1 as number | null, r.mn2 as number | null, r.mx2 as number | null,
+  ]);
+}
+
 /** Nightly: summarise yesterday (and fill any gaps in the last week), then delete data older than 92 days. */
 async function nightly(env: Env) {
   const now = Date.now();
@@ -644,11 +734,26 @@ async function nightly(env: Env) {
       .bind(day, JSON.stringify(data))
       .run();
   }
+  // per-batch summary for the same days
+  const { results: haveB } = await env.DB.prepare(
+    `SELECT day FROM batch_daily WHERE day IN (${days.map((_, i) => `?${i + 1}`).join(',')})`,
+  )
+    .bind(...days)
+    .all<{ day: string }>();
+  const doneB = new Set(haveB.map((r) => r.day));
+  for (const day of days) {
+    if (doneB.has(day) && day !== days[0]) continue;
+    await env.DB.prepare(`INSERT INTO batch_daily (day, data) VALUES (?1, ?2) ON CONFLICT (day) DO UPDATE SET data = excluded.data`)
+      .bind(day, JSON.stringify(await aggregateBatchDay(env, day)))
+      .run();
+  }
+
   const keep = Number(env.RETENTION_DAYS || 92);
   const cutoff = dayKey(now - keep * 24 * 3600 * 1000, tz(env));
   await env.DB.batch([
     env.DB.prepare('DELETE FROM days WHERE day < ?1').bind(cutoff),
     env.DB.prepare('DELETE FROM stats_daily WHERE day < ?1').bind(cutoff),
+    env.DB.prepare('DELETE FROM batch_daily WHERE day < ?1').bind(cutoff),
   ]);
 }
 

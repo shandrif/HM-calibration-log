@@ -38,6 +38,7 @@ export const api = {
   void: (id: string, day: string) => req('POST', `/api/batches/${id}/void`, { day }),
   discard: (id: string, day: string, ml: number) => req('POST', `/api/batches/${id}/discard`, { day, ml }),
   staff: (names: string[]) => req<{ staff: string[] }>('PUT', '/api/staff', { names }),
+  setBean: (bean: string, batch: string, by: string) => req<{ beans: StoreInfo['beans'] }>('PUT', '/api/beans', { bean, batch, by }),
   log: (day: string) => req<{ day: string; store: StoreInfo; batches: Batch[] }>('GET', `/api/log?day=${day}`),
   logDays: () => req<{ days: Record<string, number> }>('GET', '/api/log/days'),
   subscribe: (sub: PushSubscriptionJSON) => req('POST', '/api/push/subscribe', sub),
@@ -55,9 +56,27 @@ export const adminApi = {
   logDays: (store: number) => req<{ days: Record<string, number> }>('GET', `/api/admin/log/days?store=${store}`),
   refreshUsage: () => req('POST', '/api/admin/usage/refresh'),
   waste: (from: string, to: string) => req<WasteResponse>('GET', `/api/admin/waste?from=${from}&to=${to}`),
+  batches: (from: string, to: string) => req<BatchesResponse>('GET', `/api/admin/batches?from=${from}&to=${to}`),
   pins: (body: { ids?: number[]; onlyMissing?: boolean }) =>
     req<{ pins: { id: number; code: string; name: string; pin: string }[] }>('POST', '/api/admin/pins', body),
 };
+
+export interface BatchesResponse {
+  from: string;
+  to: string;
+  rows: {
+    sid: number;
+    bn: string;
+    slot: string;
+    v: number[]; // logs, discardMl, discards, w1, w2, wgTenths, sumD1, sumD2
+    mn1: number | null;
+    mx1: number | null;
+    mn2: number | null;
+    mx2: number | null;
+    first: string;
+    last: string;
+  }[];
+}
 
 export interface WasteResponse {
   from: string;

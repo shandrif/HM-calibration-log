@@ -32,6 +32,12 @@ python3 -I scripts/sync_stores.py <exported sheet file>
 - Stores removed from the sheet are deactivated, never deleted. The script refuses to write if fewer than 50 stores parse.
 - The sheet is **not** stored in this repository (it contains staff names and emails).
 
+## Bean batches
+
+Each store keeps the current batch (lot) number for **Espresso**, **Ethiopian** and **Brazilian** (hot/cold espresso share one; hot/iced drip share their origin's). The board shows them in a strip; tap one to change it when a new bag is opened (recent batches are one tap). The first log of a bean without a batch asks for it once (can be skipped). Every log is stamped with the batch in use, so it costs no extra taps.
+
+`/admin` → **Batches**: results per batch for 7 / 30 / 92 days — stores, calibrations, drip litres discarded (and per batch brewed), espresso grams thrown (and per calibration), average and range of grinder settings, first/last day used; tap a batch for the per-store breakdown; CSV export. A nightly summary (`batch_daily`, one row per day) keeps it cheap.
+
 ## Bean waste report
 
 `/admin` → **Bean waste**: litres of Ethiopian and Brazilian drip discarded (hot/iced split) for today, 7, 30 or 92 days, grouped by store, area manager, ROM or city, with CSV export. Finished days come from a nightly summary (one row per day), so the report stays cheap on the free tier.
