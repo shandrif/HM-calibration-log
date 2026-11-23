@@ -1,5 +1,7 @@
 # HM Calibration Log
 
+**Live:** https://calibration.hmreport.com (head office: `/admin`). The domain is served by a small forwarding Worker (`hm-calibration-proxy`) in the hmreport.com Cloudflare account, which passes requests to this Worker (`hm-calibration.shelfy-help.workers.dev`).
+
 Website for 100+ HM stores to log espresso and drip calibrations and track batch freshness, with a loud alarm on expiry, branded daily PDF reports, a 500 m location lock and Arabic/English. Runs entirely on Cloudflare's free tier.
 
 | Station | Items | Batch life |

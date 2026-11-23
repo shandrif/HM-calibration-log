@@ -26,7 +26,7 @@
     "TZ_OFFSET_MIN": "180",
     "RETENTION_DAYS": "92",
     "VAPID_PUBLIC_KEY": "BDcw7NDvaV8UxHaxS96n3bYY4XD5mtSvJMhxPuS5QinrXtCPQlrDqOnPooYsLWT8CUhVjPuLBgl2-kv7a8tuyJY",
-    "PUBLIC_ORIGIN": "https://hm-calibration.shelfy-help.workers.dev"
+    "PUBLIC_ORIGIN": "https://calibration.hmreport.com"
   }
   // Secrets (wrangler secret put): SESSION_SECRET, ADMIN_PASSWORD, VAPID_PRIVATE_JWK, ACCOUNT_ID, ANALYTICS_TOKEN (optional)
 }
