@@ -1,10 +1,10 @@
 import { useI18n } from '../lib/i18n';
 
-export type DeviceKind = 'ios' | 'android' | 'other';
+export type DeviceKind = 'ios' | 'ios-chrome' | 'android' | 'other';
 
 export function deviceKind(): DeviceKind {
   const ua = navigator.userAgent;
-  if (/iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) return 'ios';
+  if (/iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) return /CriOS/.test(ua) ? 'ios-chrome' : 'ios';
   if (/Android/i.test(ua)) return 'android';
   return 'other';
 }
@@ -13,7 +13,14 @@ export function deviceKind(): DeviceKind {
 export function LocationHelp({ onRetry, busy }: { onRetry: () => void; busy?: boolean }) {
   const { t } = useI18n();
   const kind = deviceKind();
-  const steps = kind === 'ios' ? [t.locIos1, t.locIos2, t.locIos3] : kind === 'android' ? [t.locAndroid1, t.locAndroid2, t.locAndroid3] : [t.locOther1, t.locOther2];
+  const steps =
+    kind === 'ios'
+      ? [t.locIos1, t.locIos2, t.locIos3]
+      : kind === 'ios-chrome'
+        ? [t.locIosChrome1, t.locIosChrome2, t.locIosChrome3]
+        : kind === 'android'
+          ? [t.locAndroid1, t.locAndroid2, t.locAndroid3, t.locAndroid4]
+          : [t.locOther1, t.locOther2];
   return (
     <div className="loc-help" role="alert">
       <div className="loc-help-title">{t.locHelpTitle}</div>
