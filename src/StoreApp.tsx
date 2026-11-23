@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { toast } from 'sonner';
-import { type Batch, type StoreInfo, slotsFor, DISCARD_QUICK_ML, MAX_THROWN, DOSE_TENTHS_G, thrownTenths, formatGrams } from '../shared/config';
+import { type Batch, type StoreInfo, slotsFor, DISCARD_QUICK_ML, MAX_THROWN, DOSE_TENTHS_G, thrownTenths } from '../shared/config';
 import { api, ApiError } from './lib/api';
 import { useI18n, fmt, slotLabel } from './lib/i18n';
 import { useNow, setServerNow, nowMs, clock, dayKey } from './lib/time';
@@ -10,6 +10,7 @@ import { useWakeLock } from './lib/wakelock';
 import { unlockAudio, startAlarm, stopAlarm, chime } from './lib/sound';
 import { slotView, loadAcks, saveAcks, ls, lsSet, type SlotView } from './lib/board';
 import { Tile } from './components/Tile';
+import { Grams } from './components/Grams';
 import { Sheet } from './components/Sheet';
 import { DoseStepper } from './components/DoseStepper';
 import { Logo } from './components/Logo';
@@ -451,7 +452,7 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
                 <span>{t.thrownTitle}</span>
                 {espressoSheet.w1 + espressoSheet.w2 > 0 && (
                   <motion.span className="thrown-total num" key={espressoSheet.w1 * 100 + espressoSheet.w2} initial={{ opacity: 0.4, y: -2 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }}>
-                    = {formatGrams(thrownTenths(espressoSheet.w1, espressoSheet.w2))}
+                    = <Grams tenths={thrownTenths(espressoSheet.w1, espressoSheet.w2)} lang={lang} />
                   </motion.span>
                 )}
               </div>

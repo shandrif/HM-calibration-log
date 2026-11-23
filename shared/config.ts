@@ -67,10 +67,15 @@ export function thrownTenths(w1 = 0, w2 = 0): number {
   return w1 * DOSE_TENTHS_G.d1 + w2 * DOSE_TENTHS_G.d2;
 }
 /** 82.2 g, or 1.25 kg from 1000 g. Input in tenths of a gram. */
-export function formatGrams(tenths: number): string {
+export function gramsParts(tenths: number, lang: 'en' | 'ar' = 'en'): { value: string; unit: string } {
   const g = tenths / 10;
-  if (g >= 1000) return `${(g / 1000).toFixed(2).replace(/\.?0+$/, '')} kg`;
-  return `${Number.isInteger(g) ? g : g.toFixed(1)} g`;
+  const [gU, kgU] = lang === 'ar' ? ['غ', 'كغ'] : ['g', 'kg'];
+  if (g >= 1000) return { value: (g / 1000).toFixed(2).replace(/\.?0+$/, ''), unit: kgU };
+  return { value: Number.isInteger(g) ? String(g) : g.toFixed(1), unit: gU };
+}
+export function formatGrams(tenths: number, lang: 'en' | 'ar' = 'en'): string {
+  const { value, unit } = gramsParts(tenths, lang);
+  return `${value} ${unit}`;
 }
 export function isValidThrown(v: unknown): v is number {
   return typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= MAX_THROWN;

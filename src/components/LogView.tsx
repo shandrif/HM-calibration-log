@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
-import { type Batch, type StoreInfo, formatDose, formatGrams, thrownTenths } from '../../shared/config';
+import { type Batch, type StoreInfo, formatDose, thrownTenths } from '../../shared/config';
+import { Grams } from './Grams';
 import { useI18n, slotLabel } from '../lib/i18n';
 import { addDays, clock, dayKey, formatDay, nowMs } from '../lib/time';
 import { batchOutcome, discardByBean, litres } from '../lib/board';
@@ -93,29 +94,35 @@ export function LogView({
           <div className="summary-value num">{batches ? live.filter((b) => batchOutcome(b, sorted, now) === 'expired').length : '–'}</div>
           <div className="summary-label">{t.expiredCount}</div>
         </div>
-        <div className="summary-item summary-beans">
-          <div className="summary-label">{t.dripDiscarded}</div>
-          <div className="beans">
-            {(['ethiopian', 'brazilian'] as const).map((bean) => (
-              <div className="bean" data-bean={bean} key={bean}>
-                <div className="bean-name">
-                  <i className={bean === 'ethiopian' ? 'dot-eth' : 'dot-bra'} /> {t[bean]}
-                </div>
-                <div className="summary-value num">
-                  {batches ? litres(byBean[bean].hot + byBean[bean].iced) : '–'} <small>{t.litres}</small>
-                </div>
-                <div className="bean-split num">
-                  {t.hotShort} {litres(byBean[bean].hot)} · {t.icedShort} {litres(byBean[bean].iced)}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
         <div className="summary-item">
-          <div className="summary-value num">{batches ? formatGrams(thrownG) : '–'}</div>
+          <div className="summary-value num">{batches ? <Grams tenths={thrownG} lang={lang} /> : '–'}</div>
           <div className="summary-label">{t.espressoThrown}</div>
         </div>
       </div>
+
+      <section className="beans-card" aria-label={t.dripDiscarded}>
+        <div className="beans-title">{t.dripDiscarded}</div>
+        <div className="beans">
+          {(['ethiopian', 'brazilian'] as const).map((bean) => (
+            <div className="bean" data-bean={bean} key={bean}>
+              <div className="bean-name">
+                <i className={bean === 'ethiopian' ? 'dot-eth' : 'dot-bra'} /> {t[bean]}
+              </div>
+              <div className="bean-value num">
+                {batches ? litres(byBean[bean].hot + byBean[bean].iced) : '–'} <small>{t.litres}</small>
+              </div>
+              <div className="bean-split num">
+                <span>
+                  {t.hotShort} <b>{litres(byBean[bean].hot)}</b>
+                </span>
+                <span>
+                  {t.icedShort} <b>{litres(byBean[bean].iced)}</b>
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
 
       <div className="export-row">
         <button className="btn btn-primary" onClick={() => exportPdf('pdf')} disabled={!batches || !!busy}>
@@ -169,7 +176,7 @@ export function LogView({
                     </span>
                     {!!(b.w1 || b.w2) && (
                       <span className="entry-disc num">
-                        {t.thrown}: {t.dose1} ×{b.w1 ?? 0} · {t.dose2} ×{b.w2 ?? 0} · {formatGrams(b.wg ?? thrownTenths(b.w1, b.w2))}
+                        {t.thrown}: {t.dose1} ×{b.w1 ?? 0} · {t.dose2} ×{b.w2 ?? 0} · <Grams tenths={b.wg ?? thrownTenths(b.w1, b.w2)} lang={lang} />
                       </span>
                     )}
                     {!!b.dl && (

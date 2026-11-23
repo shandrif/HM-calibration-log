@@ -5,12 +5,13 @@ import { slotLabel } from '../lib/i18n';
 import { batchOutcome, discardByBean, litres } from '../lib/board';
 import { clock, formatDay, dayKey } from '../lib/time';
 import { Logo } from './Logo';
+import { Grams } from './Grams';
 
 // A4 at 96 dpi. Rows have a fixed height so pages can be split without measuring.
 export const PAGE_W = 794;
 export const PAGE_H = 1123;
 const ROW_H = 30;
-const FIRST_PAGE_ROWS = 22;
+const FIRST_PAGE_ROWS = 20;
 const PAGE_ROWS = 30;
 
 type Line = { kind: 'section'; title: string; count: number } | { kind: 'row'; b: Batch };
@@ -74,17 +75,28 @@ export function ReportPages({ t, lang, store, day, batches, generatedAt }: { t: 
               <div className="pdf-stats">
                 <Stat label={t.calibrations} value={String(live.length)} />
                 <Stat label={t.expiredCount} value={String(expired)} tone={expired ? 'bad' : undefined} />
-                {(['ethiopian', 'brazilian'] as const).map((bean) => (
-                  <Stat
-                    key={bean}
-                    label={`${t[bean]} · ${t.discarded}`}
-                    value={`${litres(byBean[bean].hot + byBean[bean].iced)} ${t.litres}`}
-                    sub={`${t.hotShort} ${litres(byBean[bean].hot)} · ${t.icedShort} ${litres(byBean[bean].iced)}`}
-                    tone={bean === 'ethiopian' ? 'eth' : 'bra'}
-                  />
-                ))}
-                <Stat label={t.espressoThrown} value={formatGrams(thrownG)} />
+                <Stat label={t.espressoThrown} value={<Grams tenths={thrownG} lang={lang} />} />
                 <Stat label={t.voided} value={String(batches.length - live.length)} />
+              </div>
+              <div className="pdf-beans">
+                {(['ethiopian', 'brazilian'] as const).map((bean) => (
+                  <div className="pdf-bean" data-bean={bean} key={bean}>
+                    <div className="pdf-bean-head">
+                      <span className="pdf-bean-name">{t[bean]}</span>
+                      <span className="pdf-bean-label">{t.dripDiscarded}</span>
+                    </div>
+                    <div className="pdf-bean-body">
+                      <span className="pdf-bean-value">
+                        {litres(byBean[bean].hot + byBean[bean].iced)} <small>{t.litres}</small>
+                      </span>
+                      <span className="pdf-bean-split">
+                        {t.hotShort} <b>{litres(byBean[bean].hot)} {t.litres}</b>
+                        <i />
+                        {t.icedShort} <b>{litres(byBean[bean].iced)} {t.litres}</b>
+                      </span>
+                    </div>
+                  </div>
+                ))}
               </div>
             </>
           ) : (
@@ -134,12 +146,11 @@ function HeaderRow({ t }: { t: Strings }) {
   );
 }
 
-function Stat({ label, value, tone, sub }: { label: string; value: string; tone?: 'bad' | 'eth' | 'bra'; sub?: string }) {
+function Stat({ label, value, tone }: { label: string; value: React.ReactNode; tone?: 'bad' }) {
   return (
     <div className="pdf-stat" data-tone={tone}>
       <div className="pdf-stat-value">{value}</div>
       <div className="pdf-stat-label">{label}</div>
-      {sub && <div className="pdf-stat-sub">{sub}</div>}
     </div>
   );
 }
