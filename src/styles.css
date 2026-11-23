@@ -1927,3 +1927,63 @@ button:disabled {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* multi-person shift */
+.staffbar-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.staffbar-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 99px;
+  background: var(--ink);
+  color: var(--bg);
+  font-size: 11px;
+  letter-spacing: 0;
+}
+.chip-check {
+  margin-inline-end: 6px;
+  font-size: 12px;
+  opacity: 0.85;
+}
+.chip-other {
+  background: var(--surface-2);
+  box-shadow: none;
+  color: var(--muted);
+}
+.by {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.by-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.by-label svg {
+  width: 16px;
+  height: 16px;
+}
+.by-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.by-chips .chip {
+  height: 44px;
+  padding: 0 16px;
+  font-size: 15px;
+}
+.by-chips .chip-add {
+  width: 44px;
+  padding: 0;
+}

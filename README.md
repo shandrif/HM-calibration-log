@@ -11,8 +11,9 @@ Website for 100+ HM stores to log espresso and drip calibrations and track batch
 ## How it works
 
 - **Store device:** sign in once with store code + PIN (location checked), tap **Tap to begin** each time the page opens (this enables sound and keeps the screen awake).
-- **Drip:** 1 tap on **Start**. If an earlier batch existed, a sheet asks how much was thrown away (None / ¼ / ½ / ¾ L / Other in 0.25 L steps); it closes by itself after 10 s.
-- **Espresso:** **Calibrate** opens dose 1 / dose 2, pre-filled with the last values. The right-hand number only moves in steps of 5 (00–95).
+- **Shift:** tap names in the **On shift** bar to add or remove people; several people can be on shift. Each log records who did it.
+- **Drip:** 1 tap on **Start** (when 2+ people are on shift, one more tap picks who is brewing). If an earlier batch existed, a sheet asks how much was thrown away (None / ¼ / ½ / ¾ L / Other in 0.25 L steps); it closes by itself after 10 s.
+- **Espresso:** **Calibrate** opens dose 1 / dose 2, pre-filled with the last values, shots thrown (dose 1 = 18.8 g, dose 2 = 25.8 g) and **Calibrated by** (pre-selected with the last person who logged). The right-hand number only moves in steps of 5 (00–95).
 - **Undo** for 2 minutes after Start; after that, **⋯ → Reset batch** until it expires. Reset batches stay in the log, marked "Reset".
 - **Alarm:** loud repeating buzzer while the page is open, until **Stop alarm** or a new batch. Optional push notifications when the page is closed (Android; iPhone only when added to the Home Screen).
 - **Log:** any of the last 92 days, **Download PDF** / **Share** (built on the device).

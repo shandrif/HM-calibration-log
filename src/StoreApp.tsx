@@ -144,20 +144,41 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
   const now = useNow();
   const geo = useGeo(gated && store.geofence);
   const awake = useWakeLock(gated);
-  const [staff, setStaffState] = useState(() => ls('hm_staff'));
+  // Several people can be on shift; each log records who actually did it.
+  const [shift, setShiftState] = useState<string[]>(() => {
+    try {
+      const s = JSON.parse(ls('hm_shift', '[]'));
+      if (Array.isArray(s) && s.length) return s.map(String);
+    } catch {
+      /* ignore */
+    }
+    const legacy = ls('hm_staff');
+    return legacy ? [legacy] : [];
+  });
+  const [lastBy, setLastByState] = useState(() => ls('hm_last_by'));
+  const [whoSheet, setWhoSheet] = useState<null | { label: string; then: (name: string) => void }>(null);
   const [acks, setAcks] = useState(loadAcks);
   const [busySlot, setBusySlot] = useState<string | null>(null);
 
   // sheets
   const [staffSheet, setStaffSheet] = useState<null | { then?: (name: string) => void }>(null);
-  const [espressoSheet, setEspressoSheet] = useState<null | { slot: string; d1: number; d2: number; w1: number; w2: number }>(null);
+  const [espressoSheet, setEspressoSheet] = useState<null | { slot: string; d1: number; d2: number; w1: number; w2: number; by: string }>(null);
   const [discardSheet, setDiscardSheet] = useState<null | { id: string; day: string; label: string }>(null);
   const [resetSheet, setResetSheet] = useState<null | { batch: Batch }>(null);
 
-  const setStaff = (n: string) => {
-    setStaffState(n);
-    lsSet('hm_staff', n);
+  const onShift = useMemo(() => shift.filter((n) => store.staff.includes(n)), [shift, store.staff]);
+  const setShift = (names: string[]) => {
+    setShiftState(names);
+    lsSet('hm_shift', JSON.stringify(names));
   };
+  const toggleShift = (n: string) => setShift(shift.includes(n) ? shift.filter((x) => x !== n) : [...shift, n]);
+  const addToShift = (n: string) => !shift.includes(n) && setShift([...shift, n]);
+  const setLastBy = (n: string) => {
+    setLastByState(n);
+    lsSet('hm_last_by', n);
+  };
+  // most recent person first in pickers
+  const shiftOrdered = useMemo(() => (lastBy && onShift.includes(lastBy) ? [lastBy, ...onShift.filter((n) => n !== lastBy)] : onShift), [onShift, lastBy]);
 
   const slots = useMemo(() => slotsFor(store.espresso_mode), [store.espresso_mode]);
   const views = useMemo(() => slots.map((d) => slotView(d, batches, now)), [slots, batches, now]);
@@ -207,8 +228,10 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
     toast.error(t.failed);
   };
 
-  const withStaff = (fn: (name: string) => void) => {
-    if (staff && store.staff.includes(staff)) fn(staff);
+  /** One person on shift → use them. Several → quick "who is doing this?" picker. Nobody → pick/add a name. */
+  const withStaff = (label: string, fn: (name: string) => void) => {
+    if (onShift.length === 1) fn(onShift[0]);
+    else if (onShift.length > 1) setWhoSheet({ label, then: fn });
     else setStaffSheet({ then: fn });
   };
 
@@ -216,6 +239,7 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
     const previous = view.current && nowMs() - view.current.t < 12 * 3600 * 1000 ? view.current : undefined;
     setBusySlot(view.def.slot);
     try {
+      setLastBy(name);
       const res = await api.start({ slot: view.def.slot, staff: name, ...doses, fix: geo.fix.current });
       setServerNow(res.now);
       setBatches((b) => [...b, res.batch]);
@@ -240,9 +264,12 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
   const onPrimary = (view: SlotView) => {
     if (view.def.kind === 'espresso') {
       const last = store.last_doses[view.def.slot] ?? store.last_doses.espresso_hot ?? store.last_doses.espresso ?? [630, 870];
-      withStaff(() => setEspressoSheet({ slot: view.def.slot, d1: last[0], d2: last[1], w1: 0, w2: 0 }));
+      const open = (by: string) => setEspressoSheet({ slot: view.def.slot, d1: last[0], d2: last[1], w1: 0, w2: 0, by });
+      if (onShift.length === 0) setStaffSheet({ then: open });
+      else open(onShift.length === 1 ? onShift[0] : lastBy && onShift.includes(lastBy) ? lastBy : '');
     } else {
-      withStaff((name) => void startBatch(view, name));
+      const l = slotLabel(t, view.def.slot);
+      withStaff(`${l.group} · ${l.item}`, (name) => void startBatch(view, name));
     }
   };
 
@@ -290,7 +317,7 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
             {lang === 'ar' ? 'EN' : 'ع'}
           </button>
         </div>
-        <StaffBar staff={store.staff} current={staff} onPick={setStaff} onAdd={() => setStaffSheet({})} />
+        <StaffBar staff={store.staff} onShift={onShift} onToggle={toggleShift} onAdd={() => setStaffSheet({})} />
       </header>
 
       <AnimatePresence>
@@ -399,9 +426,9 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
         open={!!staffSheet}
         onOpenChange={(o) => !o && setStaffSheet(null)}
         staff={store.staff}
-        current={staff}
+        onShift={onShift}
         onPick={(n) => {
-          setStaff(n);
+          addToShift(n);
           const then = staffSheet?.then;
           setStaffSheet(null);
           then?.(n);
@@ -433,21 +460,75 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
                 <Counter label={t.dose2} hint={fmt(t.gPerShot, { g: DOSE_TENTHS_G.d2 / 10 })} value={espressoSheet.w2} onChange={(w2) => setEspressoSheet({ ...espressoSheet, w2 })} />
               </div>
             </div>
-            <div className="sheet-who">
-              <IconUser /> {staff}
+            <div className="by">
+              <div className="by-label">
+                <IconUser /> {t.calibratedBy}
+              </div>
+              <div className="by-chips" role="radiogroup" aria-label={t.calibratedBy}>
+                {shiftOrdered.map((n) => (
+                  <button key={n} role="radio" aria-checked={espressoSheet.by === n} className="chip" data-active={espressoSheet.by === n || undefined} onClick={() => setEspressoSheet({ ...espressoSheet, by: n })}>
+                    {n}
+                  </button>
+                ))}
+                <button
+                  className="chip chip-add"
+                  aria-label={t.someoneElse}
+                  onClick={() => {
+                    const keep = espressoSheet;
+                    setEspressoSheet(null);
+                    setStaffSheet({ then: (n) => setEspressoSheet({ ...keep, by: n }) });
+                  }}
+                >
+                  <IconPlus />
+                </button>
+              </div>
             </div>
             <button
               className="btn btn-primary btn-lg"
-              disabled={busySlot === espressoSheet.slot}
+              disabled={busySlot === espressoSheet.slot || !espressoSheet.by}
               onClick={() => {
                 const v = views.find((x) => x.def.slot === espressoSheet.slot)!;
                 const d = { d1: espressoSheet.d1, d2: espressoSheet.d2, w1: espressoSheet.w1, w2: espressoSheet.w2 };
+                const by = espressoSheet.by;
                 setEspressoSheet(null);
-                void startBatch(v, staff, d);
+                void startBatch(v, by, d);
               }}
             >
-              {t.saveStart}
+              {espressoSheet.by ? t.saveStart : t.pickWho}
             </button>
+          </div>
+        )}
+      </Sheet>
+
+      <Sheet open={!!whoSheet} onOpenChange={(o) => !o && setWhoSheet(null)} title={t.whoIsDoing}>
+        {whoSheet && (
+          <div className="sheet-body">
+            <p className="sheet-text muted">{whoSheet.label}</p>
+            <div className="chip-grid">
+              {shiftOrdered.map((n) => (
+                <button
+                  key={n}
+                  className="chip chip-lg"
+                  onClick={() => {
+                    const then = whoSheet.then;
+                    setWhoSheet(null);
+                    then(n);
+                  }}
+                >
+                  {n}
+                </button>
+              ))}
+              <button
+                className="chip chip-lg chip-other"
+                onClick={() => {
+                  const then = whoSheet.then;
+                  setWhoSheet(null);
+                  setStaffSheet({ then });
+                }}
+              >
+                {t.someoneElse}
+              </button>
+            </div>
           </div>
         )}
       </Sheet>
@@ -521,14 +602,20 @@ function Counter({ label, hint, value, onChange }: { label: string; hint: string
 
 // ---------------------------------------------------------------- staff
 
-function StaffBar({ staff, current, onPick, onAdd }: { staff: string[]; current: string; onPick: (n: string) => void; onAdd: () => void }) {
+function StaffBar({ staff, onShift, onToggle, onAdd }: { staff: string[]; onShift: string[]; onToggle: (n: string) => void; onAdd: () => void }) {
   const { t } = useI18n();
+  // people on shift first, then everyone else
+  const ordered = [...onShift, ...staff.filter((n) => !onShift.includes(n))];
   return (
-    <div className="staffbar" role="radiogroup" aria-label={t.onShift}>
-      <span className="staffbar-label">{t.onShift}</span>
+    <div className="staffbar" role="group" aria-label={t.onShift}>
+      <span className="staffbar-label">
+        {t.onShift}
+        {onShift.length > 0 && <span className="staffbar-count num">{onShift.length}</span>}
+      </span>
       <div className="staffbar-chips">
-        {staff.map((n) => (
-          <button key={n} role="radio" aria-checked={n === current} className="chip" data-active={n === current || undefined} onClick={() => onPick(n)}>
+        {ordered.map((n) => (
+          <button key={n} aria-pressed={onShift.includes(n)} className="chip" data-active={onShift.includes(n) || undefined} onClick={() => onToggle(n)}>
+            {onShift.includes(n) && <span className="chip-check" aria-hidden>✓</span>}
             {n}
           </button>
         ))}
@@ -544,14 +631,14 @@ function StaffSheet({
   open,
   onOpenChange,
   staff,
-  current,
+  onShift,
   onPick,
   onAdd,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   staff: string[];
-  current: string;
+  onShift: string[];
   onPick: (n: string) => void;
   onAdd: (n: string) => Promise<boolean>;
 }) {
@@ -567,7 +654,7 @@ function StaffSheet({
         {staff.length > 0 && (
           <div className="chip-grid">
             {staff.map((n) => (
-              <button key={n} className="chip chip-lg" data-active={n === current || undefined} onClick={() => onPick(n)}>
+              <button key={n} className="chip chip-lg" data-active={onShift.includes(n) || undefined} onClick={() => onPick(n)}>
                 {n}
               </button>
             ))}
