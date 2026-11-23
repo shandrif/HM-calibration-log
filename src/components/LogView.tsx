@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
-import { type Batch, type StoreInfo, formatDose, thrownTenths } from '../../shared/config';
+import { type Batch, type StoreInfo, formatDose, thrownTenths, slotsFor } from '../../shared/config';
 import { Grams } from './Grams';
-import { useI18n, slotLabel } from '../lib/i18n';
+import { useI18n, slotLabel, type Strings } from '../lib/i18n';
 import { addDays, clock, dayKey, formatDay, nowMs } from '../lib/time';
-import { batchOutcome, discardByBean, litres } from '../lib/board';
+import { batchOutcome, discardByBean, litres, slotView } from '../lib/board';
 import { buildPdf, canShareFile, downloadFile } from '../lib/pdf';
 import { IconChevron, IconDownload, IconShare, IconDrop, IconCalendar } from './Icons';
 import { CalendarSheet } from './CalendarSheet';
@@ -180,64 +180,185 @@ export function LogView({
             <div className="skeleton" key={i} />
           ))}
         </div>
-      ) : sorted.length === 0 ? (
-        <p className="empty">{t.noEntries}</p>
       ) : (
-        <ol className="timeline">
-          {sorted.map((b, i) => {
-            const l = slotLabel(t, b.s);
-            const outcome = batchOutcome(b, sorted, now);
-            return (
-              <motion.li
-                key={b.id}
-                className="entry"
-                data-outcome={outcome}
-                data-station={b.s.split(':')[0].startsWith('espresso') ? 'espresso' : b.s.split(':')[0]}
-                initial={{ opacity: 0, y: 10 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, margin: '0px 0px -40px 0px' }}
-                transition={{ duration: 0.3, delay: Math.min(i, 6) * 0.03, ease: [0.23, 1, 0.32, 1] }}
-              >
-                <div className="entry-time num">{clock(b.t)}</div>
-                <div className="entry-dot" aria-hidden />
-                <div className="entry-body">
-                  <div className="entry-title">
-                    {l.group} · {l.item}
-                    {outcome !== 'active' && <span className="tag" data-kind={outcome}>{t[outcome === 'voided' ? 'voided' : outcome === 'replaced' ? 'replaced' : 'expired']}</span>}
-                  </div>
-                  <div className="entry-meta">
-                    <span>{b.n}</span>
-                    {b.bn && (
-                      <span className="entry-batch num" dir="ltr">
-                        #{b.bn}
-                      </span>
-                    )}
-                    {b.d1 != null && (
-                      <span className="num" dir="ltr">
-                        {formatDose(b.d1)} · {formatDose(b.d2)}
-                      </span>
-                    )}
-                    <span className="num">
-                      {t.ends} {clock(b.x)}
-                    </span>
-                    {!!(b.w1 || b.w2) && (
-                      <span className="entry-disc num">
-                        {t.thrown}: {t.dose1} ×{b.w1 ?? 0} · {t.dose2} ×{b.w2 ?? 0} · <Grams tenths={b.wg ?? thrownTenths(b.w1, b.w2)} lang={lang} />
-                      </span>
-                    )}
-                    {!!b.dl && (
-                      <span className="entry-disc num">
-                        <IconDrop /> {b.dl / 1000} {t.litres}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </motion.li>
-            );
-          })}
-        </ol>
+        <>
+          <LastCalibrations store={store} batches={sorted} day={day} isToday={day === today} now={now} />
+          {sorted.length === 0 ? (
+            <p className="empty">{t.noEntries}</p>
+          ) : (
+            <LogSections batches={sorted} now={now} />
+          )}
+        </>
       )}
       <p className="footnote">{t.storeTime}</p>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- last calibration per item
+
+const STATION_OF = (slot: string) => (slot.startsWith('espresso') ? 'espresso' : (slot.split(':')[0] as 'hot_drip' | 'iced_drip'));
+
+function ago(ms: number, t: Strings) {
+  const m = Math.max(0, Math.floor(ms / 60000));
+  if (m < 1) return t.justNow;
+  if (m < 60) return `${m}${t.minShort}`;
+  return `${Math.floor(m / 60)}${t.hourShort} ${String(m % 60).padStart(2, '0')}${t.minShort}`;
+}
+
+function LastCalibrations({ store, batches, day, isToday, now }: { store: StoreInfo; batches: Batch[]; day: string; isToday: boolean; now: number }) {
+  const { t } = useI18n();
+  const slots = slotsFor(store.espresso_mode);
+  return (
+    <section className="last-card" aria-label={t.lastCalibration}>
+      <div className="last-title">{isToday ? t.lastCalibration : `${t.lastCalibration} · ${day.slice(5)}`}</div>
+      <div className="last-table" role="table">
+        <div className="last-row last-head" role="row">
+          <span>{t.item}</span>
+          <span>{t.time}</span>
+          <span>{t.agoCol}</span>
+          <span>{t.by}</span>
+          <span>{t.batch}</span>
+          <span>{t.status}</span>
+        </div>
+        {slots.map((def) => {
+          const l = slotLabel(t, def.slot);
+          const last = batches.find((b) => b.s === def.slot && !b.v); // batches are newest first
+          if (!last)
+            return (
+              <div className="last-row" role="row" key={def.slot} data-empty>
+                <span className="last-item">
+                  <i className={`st-dot st-${STATION_OF(def.slot)}`} />
+                  <b>{l.group}</b> · {l.item}
+                </span>
+                <span className="last-none">{isToday ? t.notYetToday : t.noneThatDay}</span>
+              </div>
+            );
+          let status: { key: string; label: string };
+          if (isToday) {
+            const v = slotView(def, batches, now);
+            status = { key: v.phase, label: v.phase === 'brewing' ? t.brewing : v.phase === 'soon' ? t.soon : v.phase === 'expired' ? t.expired : v.phase === 'none' ? '—' : t.freshStatus };
+          } else {
+            const o = batchOutcome(last, batches, now);
+            status = { key: o === 'expired' ? 'expired' : 'done', label: o === 'expired' ? t.expired : t.done };
+          }
+          return (
+            <div className="last-row" role="row" key={def.slot}>
+              <span className="last-item">
+                <i className={`st-dot st-${STATION_OF(def.slot)}`} />
+                <b>{l.group}</b> · {l.item}
+              </span>
+              <span className="num last-time">{clock(last.t)}</span>
+              <span className="num last-ago">{isToday ? ago(now - last.t, t) : '—'}</span>
+              <span className="last-by">{last.n}</span>
+              <span className="num last-bn" dir="ltr">{last.bn ? `#${last.bn}` : '—'}</span>
+              <span className="last-status">
+                <span className="status-pill" data-kind={status.key}>
+                  {status.label}
+                </span>
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------- full log, grouped by station
+
+type StationKey = 'espresso' | 'hot_drip' | 'iced_drip';
+
+function LogSections({ batches, now }: { batches: Batch[]; now: number }) {
+  const { t, lang } = useI18n();
+  const [filter, setFilter] = useState<'all' | StationKey>('all');
+  const latestIds = new Set<string>();
+  const seen = new Set<string>();
+  for (const b of batches) if (!b.v && !seen.has(b.s)) (seen.add(b.s), latestIds.add(b.id));
+  const groups: StationKey[] = ['espresso', 'hot_drip', 'iced_drip'];
+  return (
+    <div className="log-sections">
+      <div className="segmented log-filter" role="tablist">
+        {(['all', ...groups] as const).map((k) => (
+          <button key={k} role="tab" aria-selected={filter === k} data-active={filter === k || undefined} onClick={() => setFilter(k)}>
+            {k === 'all' ? t.all : t[k]}
+          </button>
+        ))}
+      </div>
+      {groups
+        .filter((g) => filter === 'all' || filter === g)
+        .map((g) => {
+          const rows = batches.filter((b) => STATION_OF(b.s) === g);
+          if (!rows.length) return null;
+          return (
+            <section className="log-group" key={g} data-station={g}>
+              <h3 className="log-group-head">
+                <i className={`st-dot st-${g}`} />
+                {t[g]}
+                <span className="log-count num">{rows.filter((r) => !r.v).length}</span>
+              </h3>
+              <div className="log-table" role="table">
+                <div className="log-row log-head" role="row">
+                  <span className="c-t">{t.time}</span>
+                  <span className="c-i">{t.item}</span>
+                  <span className="c-b">{t.by}</span>
+                  <span className="c-n">{t.batch}</span>
+                  <span className="c-d">{t.details}</span>
+                  <span className="c-s">{t.status}</span>
+                </div>
+                {rows.map((b, i) => {
+                  const l = slotLabel(t, b.s);
+                  const outcome = batchOutcome(b, batches, now);
+                  const latest = latestIds.has(b.id);
+                  const statusKey = b.v ? 'voided' : latest ? (outcome === 'expired' ? 'expired' : 'latest') : outcome;
+                  const statusLabel =
+                    statusKey === 'voided' ? t.voided : statusKey === 'latest' ? t.latest : statusKey === 'expired' ? t.expired : statusKey === 'replaced' ? t.replaced : t.done;
+                  return (
+                    <motion.div
+                      key={b.id}
+                      className="log-row"
+                      role="row"
+                      data-outcome={b.v ? 'voided' : outcome}
+                      data-latest={latest || undefined}
+                      initial={{ opacity: 0, y: 6 }}
+                      whileInView={{ opacity: 1, y: 0 }}
+                      viewport={{ once: true, margin: '0px 0px -30px 0px' }}
+                      transition={{ duration: 0.25, delay: Math.min(i, 6) * 0.02, ease: [0.23, 1, 0.32, 1] }}
+                    >
+                      <span className="c-t num">{clock(b.t)}</span>
+                      <span className="c-i">{l.item}</span>
+                      <span className="c-b">{b.n}</span>
+                      <span className="c-n num" dir="ltr">{b.bn ? `#${b.bn}` : '—'}</span>
+                      <span className="c-d num">
+                        {b.d1 != null && (
+                          <span dir="ltr">
+                            {formatDose(b.d1)} · {formatDose(b.d2)}
+                          </span>
+                        )}
+                        {!!(b.w1 || b.w2) && (
+                          <span className="c-d-waste">
+                            <bdi dir="ltr">D1×{b.w1 ?? 0} D2×{b.w2 ?? 0}</bdi> · <Grams tenths={b.wg ?? thrownTenths(b.w1, b.w2)} lang={lang} />
+                          </span>
+                        )}
+                        {!!b.dl && (
+                          <span className="c-d-waste">
+                            <IconDrop /> <bdi dir="ltr">{b.dl / 1000}</bdi> {t.litres}
+                          </span>
+                        )}
+                        {b.d1 == null && !b.dl && <span className="muted">—</span>}
+                      </span>
+                      <span className="c-s">
+                        <span className="status-pill" data-kind={statusKey}>
+                          {statusLabel}
+                        </span>
+                      </span>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            </section>
+          );
+        })}
     </div>
   );
 }
