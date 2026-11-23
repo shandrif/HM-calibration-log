@@ -229,7 +229,9 @@ function LastCalibrations({ store, batches, day, isToday, now }: { store: StoreI
               <div className="last-row" role="row" key={def.slot} data-empty>
                 <span className="last-item">
                   <i className={`st-dot st-${STATION_OF(def.slot)}`} />
-                  <b>{l.group}</b> · {l.item}
+                  <span className="last-label">
+                    <b>{l.group}</b> · {l.item}
+                  </span>
                 </span>
                 <span className="last-none">{isToday ? t.notYetToday : t.noneThatDay}</span>
               </div>
@@ -246,7 +248,9 @@ function LastCalibrations({ store, batches, day, isToday, now }: { store: StoreI
             <div className="last-row" role="row" key={def.slot}>
               <span className="last-item">
                 <i className={`st-dot st-${STATION_OF(def.slot)}`} />
-                <b>{l.group}</b> · {l.item}
+                <span className="last-label">
+                  <b>{l.group}</b> · {l.item}
+                </span>
               </span>
               <span className="num last-time">{clock(last.t)}</span>
               <span className="num last-ago">{isToday ? ago(now - last.t, t) : '—'}</span>

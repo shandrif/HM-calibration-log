@@ -3439,3 +3439,18 @@ button.batch-tr:hover {
     display: none;
   }
 }
+
+.last-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.log-filter {
+  display: inline-flex;
+  flex-wrap: nowrap;
+}
+.log-filter button {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
