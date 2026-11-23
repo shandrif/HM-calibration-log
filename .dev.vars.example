@@ -1,0 +1,5 @@
+SESSION_SECRET=change-me-to-a-long-random-string
+ADMIN_PASSWORD=devadmin
+# Generate with: node -e "..." (see README) or leave empty to disable push locally
+VAPID_PRIVATE_JWK=
+VAPID_PUBLIC_KEY=

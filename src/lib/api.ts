@@ -1,0 +1,86 @@
+import type { Batch, StateResponse, StoreInfo } from '../../shared/config';
+
+export class ApiError extends Error {
+  constructor(
+    public status: number,
+    public code: string,
+    public data: Record<string, unknown> = {},
+  ) {
+    super(code);
+  }
+}
+
+async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(path, {
+      method,
+      credentials: 'same-origin',
+      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    throw new ApiError(0, 'offline');
+  }
+  const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!res.ok) throw new ApiError(res.status, String(data.error ?? 'failed'), data);
+  return data as T;
+}
+
+export type Fix = { lat: number; lng: number; acc: number } | undefined;
+
+export const api = {
+  login: (code: string, pin: string, fix: Fix) => req<{ ok: true }>('POST', '/api/login', { code, pin, fix }),
+  logout: () => req('POST', '/api/logout'),
+  state: () => req<StateResponse>('GET', '/api/state'),
+  start: (body: { slot: string; staff: string; d1?: number; d2?: number; fix: Fix }) =>
+    req<{ now: number; day: string; batch: Batch }>('POST', '/api/batches', body),
+  void: (id: string, day: string) => req('POST', `/api/batches/${id}/void`, { day }),
+  discard: (id: string, day: string, ml: number) => req('POST', `/api/batches/${id}/discard`, { day, ml }),
+  staff: (names: string[]) => req<{ staff: string[] }>('PUT', '/api/staff', { names }),
+  log: (day: string) => req<{ day: string; store: StoreInfo; batches: Batch[] }>('GET', `/api/log?day=${day}`),
+  subscribe: (sub: PushSubscriptionJSON) => req('POST', '/api/push/subscribe', sub),
+  unsubscribe: (endpoint: string) => req('POST', '/api/push/unsubscribe', { endpoint }),
+};
+
+export const adminApi = {
+  login: (password: string) => req('POST', '/api/admin/login', { password }),
+  logout: () => req('POST', '/api/admin/logout'),
+  overview: () => req<AdminOverview>('GET', '/api/admin/overview'),
+  createStore: (s: Partial<AdminStore> & { pin: string }) => req<{ id: number }>('POST', '/api/admin/stores', s),
+  updateStore: (id: number, s: Partial<AdminStore> & { pin?: string }) => req('PUT', `/api/admin/stores/${id}`, s),
+  log: (store: number, day: string) => req<{ day: string; store: StoreInfo; batches: Batch[] }>('GET', `/api/admin/log?store=${store}&day=${day}`),
+  refreshUsage: () => req('POST', '/api/admin/usage/refresh'),
+};
+
+export interface AdminStore {
+  id: number;
+  code: string;
+  name: string;
+  name_ar: string;
+  lat: number | null;
+  lng: number | null;
+  radius_m: number;
+  espresso_mode: 'pair' | 'single';
+  active: number | boolean;
+  staff: string;
+}
+export interface AdminOverview {
+  now: number;
+  today: string;
+  stores: AdminStore[];
+  stats: { id: number; logs: number; voided: number; discarded_ml: number; last_at: number | null }[];
+  usage: null | {
+    at: number;
+    day: string;
+    requests: number;
+    rowsRead: number;
+    rowsWritten: number;
+    storageBytes: number;
+    byScript: Record<string, number>;
+    error?: string;
+  };
+  limits: { requests: number; rowsRead: number; rowsWritten: number; storageBytes: number };
+  warnAt: number;
+  analyticsConfigured: boolean;
+}

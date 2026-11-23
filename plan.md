@@ -1,6 +1,6 @@
 # HM Calibration Log: Build Plan
 
-Status: **plan only, nothing built yet.** Answer the open questions in section 12 before the build starts.
+Status: **built (v1).** Decisions from section 12 are recorded in section 13.
 
 ---
 
@@ -243,3 +243,22 @@ Each phase is deployed to `hm-calibration.shelfy-help.workers.dev` (or your own 
 6. **Language:** English only, or English + Arabic (with right-to-left layout)?
 7. **Opening hours:** should the alarm stay quiet outside opening hours, and do you want a reminder when a station hasn't been started at all?
 8. **Budget:** OK to move to Workers Paid ($5/month) if usage grows past the free tier?
+
+---
+
+## 13. Decisions (confirmed)
+
+| # | Question | Decision |
+|---|---|---|
+| 1 | Drip expiry start | **After the 5:30 brew**: hot = start + 5:30 + 30:00, iced = start + 5:30 + 60:00 |
+| 2 | Discard amount | Litres: quick picks **¼ / ½ / ¾ L**, plus "Other" in 0.25 L steps |
+| 3 | Retention | **Rolling 92 days**, deleted nightly |
+| 4 | Sign-in | **One shared code + PIN per store** |
+| 5 | Dose format | Right-hand number **00–95 in steps of 5**, no min/max |
+| 6 | Language | **English + Arabic** (right-to-left), switchable on every screen |
+| 7 | Opening hours | **24 hours**: alarms always on |
+| 8 | Budget | Stay on the **free tier**; head office sees a warning at **70%** of any limit (needs an Analytics:Read token) |
+
+### Free-tier changes made during the build
+- All of a store's batches for one day live in **one database row**, so each log is 1 write and the nightly clean-up deletes about 100 rows instead of about 11,000. Estimated writes: about 11,000 a day for 100 stores, against a limit of 100,000.
+- Push notifications carry no payload, so the server only signs a small token. This keeps server processing time per run tiny.

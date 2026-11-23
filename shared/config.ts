@@ -1,0 +1,102 @@
+// Single source of truth for stations, timings and value formats (used by the Worker and the web app).
+
+export const BREW_MS = 5.5 * 60 * 1000; // every drip batch brews for 5:30
+export const SOON_MS = 5 * 60 * 1000; // "expiring soon" window
+export const UNDO_MS = 2 * 60 * 1000; // quick undo after Start
+export const GEOFENCE_DEFAULT_M = 500;
+
+export type Station = 'espresso_hot' | 'espresso_cold' | 'espresso' | 'hot_drip' | 'iced_drip';
+export type Bean = 'ethiopian' | 'brazilian';
+export type EspressoMode = 'pair' | 'single';
+
+export interface SlotDef {
+  slot: string; // unique key, e.g. "hot_drip:ethiopian"
+  station: Station;
+  bean?: Bean;
+  group: 'espresso' | 'hot_drip' | 'iced_drip';
+  brewMs: number;
+  lifeMs: number; // counted after brewing finishes
+  kind: 'drip' | 'espresso';
+}
+
+const H = 60 * 60 * 1000;
+const M = 60 * 1000;
+
+export const BEANS: Bean[] = ['ethiopian', 'brazilian'];
+
+export function slotsFor(mode: EspressoMode): SlotDef[] {
+  const espresso: SlotDef[] =
+    mode === 'single'
+      ? [{ slot: 'espresso', station: 'espresso', group: 'espresso', brewMs: 0, lifeMs: 3 * H, kind: 'espresso' }]
+      : [
+          { slot: 'espresso_hot', station: 'espresso_hot', group: 'espresso', brewMs: 0, lifeMs: 3 * H, kind: 'espresso' },
+          { slot: 'espresso_cold', station: 'espresso_cold', group: 'espresso', brewMs: 0, lifeMs: 3 * H, kind: 'espresso' },
+        ];
+  const drip = (station: 'hot_drip' | 'iced_drip', lifeMs: number): SlotDef[] =>
+    BEANS.map((bean) => ({ slot: `${station}:${bean}`, station, bean, group: station, brewMs: BREW_MS, lifeMs, kind: 'drip' }));
+  return [...espresso, ...drip('hot_drip', 30 * M), ...drip('iced_drip', 60 * M)];
+}
+
+export const ALL_SLOTS: SlotDef[] = [...slotsFor('pair'), ...slotsFor('single').filter((s) => s.slot === 'espresso')];
+
+export function slotDef(slot: string): SlotDef | undefined {
+  return ALL_SLOTS.find((s) => s.slot === slot);
+}
+
+/** Grinder setting "6:30" is stored as 630. The right-hand part is 00–95 in steps of 5. */
+export function isValidDose(v: unknown): v is number {
+  return typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 99995 && (v % 100) % 5 === 0;
+}
+export function formatDose(v: number | null | undefined): string {
+  if (v == null) return '–';
+  return `${Math.floor(v / 100)}:${String(v % 100).padStart(2, '0')}`;
+}
+export function stepDose(v: number, part: 'major' | 'minor', dir: 1 | -1): number {
+  if (part === 'major') return Math.max(0, v + dir * 100);
+  const next = v + dir * 5;
+  return next < 0 ? 0 : next; // carries naturally: 6:95 + 5 = 7:00
+}
+// note: 695 + 5 = 700 → "7:00" and 700 - 5 = 695 → "6:95" because minor is always a multiple of 5 below 100.
+
+/** Discard amount stored in millilitres. Quick picks are ¼, ½, ¾ L; "Other" steps by 0.25 L. */
+export const DISCARD_QUICK_ML = [250, 500, 750];
+export function isValidDiscard(v: unknown): v is number {
+  return typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 50000 && v % 250 === 0;
+}
+
+/** One batch as stored inside the per-store-per-day JSON row (short keys keep rows small). */
+export interface Batch {
+  id: string;
+  s: string; // slot
+  t: number; // started (server ms)
+  r: number; // ready (brew done)
+  x: number; // expires
+  n: string; // staff name
+  d1?: number; // espresso dose 1
+  d2?: number; // espresso dose 2
+  dl?: number; // ml discarded from the previous batch of this slot
+  v?: number; // voided at
+  m?: number; // distance from store (m) when logged
+}
+
+export interface StoreInfo {
+  id: number;
+  code: string;
+  name: string;
+  name_ar: string;
+  espresso_mode: EspressoMode;
+  staff: string[];
+  last_doses: Record<string, [number, number]>;
+  geofence: boolean;
+}
+
+export interface StateResponse {
+  now: number;
+  store: StoreInfo;
+  batches: Batch[]; // today + yesterday (for batches crossing midnight)
+  vapid: string;
+}
+
+export function dayKey(ms: number, tzOffsetMin: number): string {
+  return new Date(ms + tzOffsetMin * 60000).toISOString().slice(0, 10);
+}

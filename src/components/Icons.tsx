@@ -1,0 +1,21 @@
+const P = { width: 20, height: 20, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
+export const IconBoard = () => (<svg {...P}><rect x="3" y="3" width="7" height="7" rx="2" /><rect x="14" y="3" width="7" height="7" rx="2" /><rect x="3" y="14" width="7" height="7" rx="2" /><rect x="14" y="14" width="7" height="7" rx="2" /></svg>);
+export const IconLog = () => (<svg {...P}><path d="M8 6h13M8 12h13M8 18h13" /><circle cx="3.5" cy="6" r="1" /><circle cx="3.5" cy="12" r="1" /><circle cx="3.5" cy="18" r="1" /></svg>);
+export const IconMore = () => (<svg {...P}><circle cx="5" cy="12" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="19" cy="12" r="1.5" /></svg>);
+export const IconBell = () => (<svg {...P}><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9" /><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" /></svg>);
+export const IconBellOff = () => (<svg {...P}><path d="M8.7 3A6 6 0 0 1 18 8a21.3 21.3 0 0 0 .6 5" /><path d="M17 17H3s3-2 3-9a4.67 4.67 0 0 1 .3-1.7" /><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" /><path d="m2 2 20 20" /></svg>);
+export const IconPlus = () => (<svg {...P}><path d="M12 5v14M5 12h14" /></svg>);
+export const IconMinus = () => (<svg {...P}><path d="M5 12h14" /></svg>);
+export const IconChevron = ({ dir = 'down' }: { dir?: 'up' | 'down' | 'left' | 'right' }) => {
+  const r = { up: 180, down: 0, left: 90, right: -90 }[dir];
+  return (<svg {...P} style={{ transform: `rotate(${r}deg)` }}><path d="m6 9 6 6 6-6" /></svg>);
+};
+export const IconDots = () => (<svg {...P}><circle cx="12" cy="5" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="12" cy="19" r="1" /></svg>);
+export const IconUndo = () => (<svg {...P}><path d="M9 14 4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" /></svg>);
+export const IconDownload = () => (<svg {...P}><path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" /></svg>);
+export const IconShare = () => (<svg {...P}><path d="M12 3v13" /><path d="m7 8 5-5 5 5" /><path d="M20 14v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-5" /></svg>);
+export const IconUser = () => (<svg {...P}><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></svg>);
+export const IconGlobe = () => (<svg {...P}><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" /></svg>);
+export const IconPin = () => (<svg {...P}><path d="M12 21s-7-6.2-7-12a7 7 0 0 1 14 0c0 5.8-7 12-7 12z" /><circle cx="12" cy="9" r="2.5" /></svg>);
+export const IconX = () => (<svg {...P}><path d="M18 6 6 18M6 6l12 12" /></svg>);
+export const IconDrop = () => (<svg {...P}><path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z" /></svg>);

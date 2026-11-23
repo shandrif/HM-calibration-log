@@ -1,0 +1,32 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "hm-calibration",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-11-01",
+  "observability": { "enabled": false },
+  // Static files are served by Cloudflare directly and do NOT count as Worker requests.
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "hm-calibration-db",
+      "database_id": "d39707fd-8213-4359-9b43-385728d5cea2",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "triggers": {
+    // every minute: expiry push notifications; 21:30 UTC = 00:30 Riyadh: retention; hourly: usage check
+    "crons": ["* * * * *", "30 21 * * *", "7 * * * *"]
+  },
+  "vars": {
+    "TZ_OFFSET_MIN": "180",
+    "RETENTION_DAYS": "92",
+    "VAPID_PUBLIC_KEY": "BDcw7NDvaV8UxHaxS96n3bYY4XD5mtSvJMhxPuS5QinrXtCPQlrDqOnPooYsLWT8CUhVjPuLBgl2-kv7a8tuyJY",
+    "PUBLIC_ORIGIN": "https://hm-calibration.shelfy-help.workers.dev"
+  }
+  // Secrets (wrangler secret put): SESSION_SECRET, ADMIN_PASSWORD, VAPID_PRIVATE_JWK, ACCOUNT_ID, ANALYTICS_TOKEN (optional)
+}
