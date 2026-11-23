@@ -2151,3 +2151,30 @@ button:disabled {
 .daynav-label[data-loading] {
   opacity: 0.45;
 }
+
+/* notifications setup help */
+.howto {
+  margin: 0 0 10px;
+  padding: 12px 14px 12px 34px;
+  border-radius: 14px;
+  background: var(--surface-2);
+  font-size: 14px;
+  line-height: 1.5;
+}
+[dir='rtl'] .howto {
+  padding: 12px 34px 12px 14px;
+}
+.howto li + li {
+  margin-top: 4px;
+}
+.howto-note {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.switch[aria-busy] {
+  opacity: 0.6;
+}

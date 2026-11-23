@@ -41,6 +41,7 @@ export const api = {
   log: (day: string) => req<{ day: string; store: StoreInfo; batches: Batch[] }>('GET', `/api/log?day=${day}`),
   subscribe: (sub: PushSubscriptionJSON) => req('POST', '/api/push/subscribe', sub),
   unsubscribe: (endpoint: string) => req('POST', '/api/push/unsubscribe', { endpoint }),
+  testPush: () => req('POST', '/api/push/test'),
 };
 
 export const adminApi = {

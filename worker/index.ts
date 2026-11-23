@@ -276,6 +276,26 @@ app.post('/api/push/subscribe', requireStore, async (c) => {
   return c.json({ ok: true });
 });
 
+/** Sends a test notification to this device's subscription. */
+app.post('/api/push/test', requireStore, async (c) => {
+  if (!c.env.VAPID_PRIVATE_JWK || !c.env.VAPID_PUBLIC_KEY) return err(c, 400, 'push_not_configured');
+  const { results } = await c.env.DB.prepare('SELECT endpoint FROM push_subs WHERE store_id = ?1 ORDER BY created_at DESC LIMIT 10')
+    .bind(c.get('store').id)
+    .all<{ endpoint: string }>();
+  if (!results.length) return err(c, 404, 'no_subscription');
+  const subject = c.env.PUBLIC_ORIGIN || new URL(c.req.url).origin;
+  let sent = 0;
+  for (const { endpoint } of results) {
+    try {
+      if (await sendTickle(endpoint, { publicKey: c.env.VAPID_PUBLIC_KEY, privateJwk: c.env.VAPID_PRIVATE_JWK, subject })) sent++;
+      else await c.env.DB.prepare('DELETE FROM push_subs WHERE endpoint = ?1').bind(endpoint).run();
+    } catch {
+      /* ignore one bad endpoint */
+    }
+  }
+  return c.json({ sent });
+});
+
 app.post('/api/push/unsubscribe', requireStore, async (c) => {
   const { endpoint } = await readBody<{ endpoint?: string }>(c);
   if (endpoint) await c.env.DB.prepare('DELETE FROM push_subs WHERE endpoint = ?1 AND store_id = ?2').bind(endpoint, c.get('store').id).run();

@@ -1,5 +1,5 @@
 /* HM Calibration Log service worker: offline shell + expiry notifications. */
-const CACHE = 'hm-shell-v1';
+const CACHE = 'hm-shell-v2';
 const SHELL = ['/', '/manifest.webmanifest', '/icons/icon.svg', '/icons/icon-192.png'];
 
 self.addEventListener('install', (e) => {
@@ -36,8 +36,8 @@ self.addEventListener('fetch', (e) => {
 });
 
 const LABELS = {
-  en: { espresso_hot: 'Espresso · Hot', espresso_cold: 'Espresso · Cold', espresso: 'Espresso', hot_drip: 'Hot drip', iced_drip: 'Iced drip', ethiopian: 'Ethiopian', brazilian: 'Brazilian', expired: 'expired', title: 'Batch expired', body: 'Open the board to start a new batch.' },
-  ar: { espresso_hot: 'إسبريسو · ساخن', espresso_cold: 'إسبريسو · بارد', espresso: 'إسبريسو', hot_drip: 'مقطّرة ساخنة', iced_drip: 'مقطّرة مثلّجة', ethiopian: 'إثيوبي', brazilian: 'برازيلي', expired: 'منتهية', title: 'دفعة منتهية', body: 'افتح اللوحة لبدء دفعة جديدة.' },
+  en: { espresso_hot: 'Espresso · Hot', espresso_cold: 'Espresso · Cold', espresso: 'Espresso', hot_drip: 'Hot drip', iced_drip: 'Iced drip', ethiopian: 'Ethiopian', brazilian: 'Brazilian', expired: 'expired', title: 'Batch expired', body: 'Open the board to start a new batch.', okTitle: 'HM Calibration Log', okBody: 'Notifications are working on this device.' },
+  ar: { espresso_hot: 'إسبريسو · ساخن', espresso_cold: 'إسبريسو · بارد', espresso: 'إسبريسو', hot_drip: 'مقطّرة ساخنة', iced_drip: 'مقطّرة مثلّجة', ethiopian: 'إثيوبي', brazilian: 'برازيلي', expired: 'منتهية', title: 'دفعة منتهية', body: 'افتح اللوحة لبدء دفعة جديدة.', okTitle: 'سجل المعايرة', okBody: 'الإشعارات تعمل على هذا الجهاز.' },
 };
 
 function label(L, slot) {
@@ -50,6 +50,7 @@ self.addEventListener('push', (e) => {
     (async () => {
       const lang = (self.navigator.language || 'en').startsWith('ar') ? 'ar' : 'en';
       const L = LABELS[lang];
+      let title = L.title;
       let body = L.body;
       try {
         const res = await fetch('/api/state', { credentials: 'same-origin' });
@@ -60,11 +61,16 @@ self.addEventListener('push', (e) => {
           for (const b of s.batches) if (!b.v && (!latest[b.s] || latest[b.s].t < b.t)) latest[b.s] = b;
           const expired = Object.values(latest).filter((b) => b.x <= now && now - b.x < 10 * 60 * 1000);
           if (expired.length) body = expired.map((b) => `${label(L, b.s)} — ${L.expired}`).join('\n');
+          else {
+            // nothing expired just now: this was a test from the More screen
+            title = L.okTitle;
+            body = L.okBody;
+          }
         }
       } catch {
         /* show generic text */
       }
-      await self.registration.showNotification(L.title, {
+      await self.registration.showNotification(title, {
         body,
         tag: 'hm-expired',
         renotify: true,

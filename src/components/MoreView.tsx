@@ -6,6 +6,25 @@ import { useI18n } from '../lib/i18n';
 import { testSound } from '../lib/sound';
 import { IconBell, IconGlobe, IconPin, IconX, IconPlus } from './Icons';
 
+/** Where web push can work: Chrome/Edge/Samsung/Firefox, and iPhone/iPad only when opened from the Home Screen (iOS 16.4+). */
+function pushEnvironment() {
+  const ua = navigator.userAgent;
+  const ios = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const standalone = window.matchMedia?.('(display-mode: standalone)').matches || (navigator as unknown as { standalone?: boolean }).standalone === true;
+  const supported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  return { supported, iosNeedsInstall: ios && !standalone };
+}
+
+/** The service worker registration, registering it if needed; fails after 10 s instead of hanging. */
+async function swRegistration(): Promise<ServiceWorkerRegistration> {
+  const reg = (await navigator.serviceWorker.getRegistration()) ?? (await navigator.serviceWorker.register('/sw.js'));
+  if (reg.active) return reg;
+  return Promise.race([
+    navigator.serviceWorker.ready,
+    new Promise<never>((_, rej) => setTimeout(() => rej(new Error('service worker not ready')), 10000)),
+  ]);
+}
+
 function b64ToBytes(b64: string) {
   const s = atob(b64.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((b64.length + 3) % 4));
   return Uint8Array.from(s, (c) => c.charCodeAt(0));
@@ -27,37 +46,69 @@ export function MoreView({
   onSignOut: () => void;
 }) {
   const { t, lang, setLang } = useI18n();
-  const [pushState, setPushState] = useState<'unsupported' | 'blocked' | 'off' | 'on' | 'busy'>('off');
+  const [pushState, setPushState] = useState<'unsupported' | 'ios-install' | 'blocked' | 'off' | 'on' | 'busy'>('off');
   const [name, setName] = useState('');
 
-  const pushSupported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window && !!vapid;
+  const env = pushEnvironment();
+  const pushSupported = env.supported && !!vapid;
 
   useEffect(() => {
+    if (env.iosNeedsInstall) return setPushState('ios-install');
     if (!pushSupported) return setPushState('unsupported');
     if (Notification.permission === 'denied') return setPushState('blocked');
-    navigator.serviceWorker.ready.then(async (reg) => setPushState((await reg.pushManager.getSubscription()) ? 'on' : 'off'));
-  }, [pushSupported]);
+    let alive = true;
+    swRegistration()
+      .then(async (reg) => alive && setPushState((await reg.pushManager.getSubscription()) ? 'on' : 'off'))
+      .catch(() => alive && setPushState('off'));
+    return () => {
+      alive = false;
+    };
+  }, [pushSupported, env.iosNeedsInstall]);
 
-  const togglePush = async () => {
-    if (!pushSupported) return;
+  const turnOn = async () => {
     setPushState('busy');
     try {
-      const reg = await navigator.serviceWorker.ready;
+      // Ask first, directly inside the tap: iPhone ignores a permission request that comes after other awaits.
+      const perm = Notification.permission === 'default' ? await Notification.requestPermission() : Notification.permission;
+      if (perm !== 'granted') {
+        setPushState(perm === 'denied' ? 'blocked' : 'off');
+        if (perm === 'denied') toast.error(t.notifBlocked);
+        return;
+      }
+      const reg = await swRegistration();
+      const existing = await reg.pushManager.getSubscription();
+      const sub = existing ?? (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(vapid) }));
+      await api.subscribe(sub.toJSON());
+      setPushState('on');
+      toast.success(t.notifOnToast);
+    } catch (e) {
+      console.error(e);
+      toast.error(`${t.notifFailed} (${e instanceof Error ? e.name || e.message : 'error'})`);
+      setPushState('off');
+    }
+  };
+
+  const turnOff = async () => {
+    setPushState('busy');
+    try {
+      const reg = await swRegistration();
       const existing = await reg.pushManager.getSubscription();
       if (existing) {
         await api.unsubscribe(existing.endpoint).catch(() => {});
         await existing.unsubscribe();
-        return setPushState('off');
       }
-      const perm = await Notification.requestPermission();
-      if (perm !== 'granted') return setPushState(perm === 'denied' ? 'blocked' : 'off');
-      const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(vapid) });
-      await api.subscribe(sub.toJSON());
-      setPushState('on');
     } catch (e) {
       console.error(e);
-      toast.error(t.failed);
-      setPushState('off');
+    }
+    setPushState('off');
+  };
+
+  const sendTest = async () => {
+    try {
+      await api.testPush();
+      toast(t.notifTestSent);
+    } catch {
+      toast.error(t.notifFailed);
     }
   };
 
@@ -74,18 +125,38 @@ export function MoreView({
             {t.testSound}
           </button>
         </div>
-        <div className="setting">
+        <div className="setting setting-notif">
           <span>{t.notifications}</span>
-          {pushState === 'unsupported' ? (
-            <span className="muted small">{t.notifUnsupported}</span>
-          ) : pushState === 'blocked' ? (
-            <span className="muted small">{t.notifBlocked}</span>
-          ) : (
-            <button className="switch" role="switch" aria-checked={pushState === 'on'} onClick={togglePush} disabled={pushState === 'busy'}>
+          {pushState === 'ios-install' || pushState === 'unsupported' || pushState === 'blocked' ? null : (
+            <button
+              className="switch"
+              role="switch"
+              aria-checked={pushState === 'on'}
+              aria-busy={pushState === 'busy' || undefined}
+              onClick={() => (pushState === 'on' ? turnOff() : turnOn())}
+              disabled={pushState === 'busy'}
+            >
               <span className="switch-thumb" />
             </button>
           )}
         </div>
+        {pushState === 'ios-install' && (
+          <ol className="howto">
+            <li>{t.iosStep1}</li>
+            <li>{t.iosStep2}</li>
+            <li>{t.iosStep3}</li>
+          </ol>
+        )}
+        {pushState === 'unsupported' && <p className="howto-note">{t.notifUnsupported}</p>}
+        {pushState === 'blocked' && <p className="howto-note">{t.notifBlockedHelp}</p>}
+        {pushState === 'on' && (
+          <div className="setting">
+            <span className="muted small">{t.notifOn}</span>
+            <button className="btn btn-ghost" onClick={sendTest}>
+              {t.notifTest}
+            </button>
+          </div>
+        )}
         <div className="setting">
           <span>{t.screenAwake}</span>
           <span className="status-chip" data-on={awake || undefined}>{awake ? '●' : '○'}</span>
