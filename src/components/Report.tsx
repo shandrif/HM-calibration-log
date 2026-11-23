@@ -2,7 +2,7 @@ import type { Batch, StoreInfo } from '../../shared/config';
 import { formatDose, formatGrams, thrownTenths } from '../../shared/config';
 import type { Strings } from '../lib/i18n';
 import { slotLabel } from '../lib/i18n';
-import { batchOutcome } from '../lib/board';
+import { batchOutcome, discardByBean, litres } from '../lib/board';
 import { clock, formatDay, dayKey } from '../lib/time';
 import { Logo } from './Logo';
 
@@ -51,7 +51,7 @@ export function ReportPages({ t, lang, store, day, batches, generatedAt }: { t: 
   const pages = paginate(lines);
   const live = batches.filter((b) => !b.v);
   const expired = live.filter((b) => batchOutcome(b, batches, generatedAt) === 'expired').length;
-  const discardedMl = live.reduce((a, b) => a + (b.dl ?? 0), 0);
+  const byBean = discardByBean(live);
   const thrownG = live.reduce((a, b) => a + (b.wg ?? thrownTenths(b.w1, b.w2)), 0);
   const name = lang === 'ar' && store.name_ar ? store.name_ar : store.name;
   return (
@@ -74,7 +74,15 @@ export function ReportPages({ t, lang, store, day, batches, generatedAt }: { t: 
               <div className="pdf-stats">
                 <Stat label={t.calibrations} value={String(live.length)} />
                 <Stat label={t.expiredCount} value={String(expired)} tone={expired ? 'bad' : undefined} />
-                <Stat label={t.discarded} value={`${(discardedMl / 1000).toFixed(2).replace(/\.?0+$/, '') || 0} ${t.litres}`} />
+                {(['ethiopian', 'brazilian'] as const).map((bean) => (
+                  <Stat
+                    key={bean}
+                    label={`${t[bean]} · ${t.discarded}`}
+                    value={`${litres(byBean[bean].hot + byBean[bean].iced)} ${t.litres}`}
+                    sub={`${t.hotShort} ${litres(byBean[bean].hot)} · ${t.icedShort} ${litres(byBean[bean].iced)}`}
+                    tone={bean === 'ethiopian' ? 'eth' : 'bra'}
+                  />
+                ))}
                 <Stat label={t.espressoThrown} value={formatGrams(thrownG)} />
                 <Stat label={t.voided} value={String(batches.length - live.length)} />
               </div>
@@ -126,11 +134,12 @@ function HeaderRow({ t }: { t: Strings }) {
   );
 }
 
-function Stat({ label, value, tone }: { label: string; value: string; tone?: 'bad' }) {
+function Stat({ label, value, tone, sub }: { label: string; value: string; tone?: 'bad' | 'eth' | 'bra'; sub?: string }) {
   return (
     <div className="pdf-stat" data-tone={tone}>
       <div className="pdf-stat-value">{value}</div>
       <div className="pdf-stat-label">{label}</div>
+      {sub && <div className="pdf-stat-sub">{sub}</div>}
     </div>
   );
 }

@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import { type Batch, type StoreInfo, formatDose, formatGrams, thrownTenths } from '../../shared/config';
 import { useI18n, slotLabel } from '../lib/i18n';
 import { addDays, clock, dayKey, formatDay, nowMs } from '../lib/time';
-import { batchOutcome } from '../lib/board';
+import { batchOutcome, discardByBean, litres } from '../lib/board';
 import { buildPdf, canShareFile, downloadFile } from '../lib/pdf';
 import { IconChevron, IconDownload, IconShare, IconDrop } from './Icons';
 
@@ -66,7 +66,7 @@ export function LogView({
 
   const sorted = batches ? [...batches].sort((a, b) => b.t - a.t) : [];
   const live = sorted.filter((b) => !b.v);
-  const discarded = live.reduce((a, b) => a + (b.dl ?? 0), 0);
+  const byBean = discardByBean(live);
   const thrownG = live.reduce((a, b) => a + (b.wg ?? thrownTenths(b.w1, b.w2)), 0);
 
   return (
@@ -93,11 +93,23 @@ export function LogView({
           <div className="summary-value num">{batches ? live.filter((b) => batchOutcome(b, sorted, now) === 'expired').length : '–'}</div>
           <div className="summary-label">{t.expiredCount}</div>
         </div>
-        <div className="summary-item">
-          <div className="summary-value num">
-            {batches ? (discarded / 1000).toFixed(2).replace(/\.?0+$/, '') || '0' : '–'} <small>{t.litres}</small>
+        <div className="summary-item summary-beans">
+          <div className="summary-label">{t.dripDiscarded}</div>
+          <div className="beans">
+            {(['ethiopian', 'brazilian'] as const).map((bean) => (
+              <div className="bean" data-bean={bean} key={bean}>
+                <div className="bean-name">
+                  <i className={bean === 'ethiopian' ? 'dot-eth' : 'dot-bra'} /> {t[bean]}
+                </div>
+                <div className="summary-value num">
+                  {batches ? litres(byBean[bean].hot + byBean[bean].iced) : '–'} <small>{t.litres}</small>
+                </div>
+                <div className="bean-split num">
+                  {t.hotShort} {litres(byBean[bean].hot)} · {t.icedShort} {litres(byBean[bean].iced)}
+                </div>
+              </div>
+            ))}
           </div>
-          <div className="summary-label">{t.discarded}</div>
         </div>
         <div className="summary-item">
           <div className="summary-value num">{batches ? formatGrams(thrownG) : '–'}</div>

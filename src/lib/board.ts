@@ -66,3 +66,20 @@ export function lsSet(key: string, v: string) {
     /* ignore */
   }
 }
+
+/** Drip discarded per bean (ml), split hot / iced. Reset batches are ignored. */
+export function discardByBean(batches: Batch[]) {
+  const out = { ethiopian: { hot: 0, iced: 0 }, brazilian: { hot: 0, iced: 0 } };
+  for (const b of batches) {
+    if (b.v || !b.dl) continue;
+    const [station, bean] = b.s.split(':');
+    if (bean !== 'ethiopian' && bean !== 'brazilian') continue;
+    out[bean][station === 'iced_drip' ? 'iced' : 'hot'] += b.dl;
+  }
+  return out;
+}
+
+/** 1500 → "1.5", 250 → "0.25", 0 → "0" */
+export function litres(ml: number) {
+  return (ml / 1000).toFixed(2).replace(/\.?0+$/, '') || '0';
+}
