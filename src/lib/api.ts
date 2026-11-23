@@ -51,7 +51,17 @@ export const adminApi = {
   updateStore: (id: number, s: Partial<AdminStore> & { pin?: string }) => req('PUT', `/api/admin/stores/${id}`, s),
   log: (store: number, day: string) => req<{ day: string; store: StoreInfo; batches: Batch[] }>('GET', `/api/admin/log?store=${store}&day=${day}`),
   refreshUsage: () => req('POST', '/api/admin/usage/refresh'),
+  waste: (from: string, to: string) => req<WasteResponse>('GET', `/api/admin/waste?from=${from}&to=${to}`),
+  pins: (body: { ids?: number[]; onlyMissing?: boolean }) =>
+    req<{ pins: { id: number; code: string; name: string; pin: string }[] }>('POST', '/api/admin/pins', body),
 };
+
+export interface WasteResponse {
+  from: string;
+  to: string;
+  today: string;
+  totals: Record<string, Record<string, [number, number, number]>>; // storeId -> slot -> [ml, discards, batches]
+}
 
 export interface AdminStore {
   id: number;
@@ -63,7 +73,20 @@ export interface AdminStore {
   radius_m: number;
   espresso_mode: 'pair' | 'single';
   active: number | boolean;
-  staff: string;
+  syrve_code: string;
+  city: string;
+  region: string;
+  zone: string;
+  sub_zone: string;
+  area_manager: string;
+  rom: string;
+  location_type: string;
+  drive_thru: string;
+  coord_evidence: string;
+  opening_date: string;
+  source: 'manual' | 'master';
+  synced_at: number;
+  has_pin: number;
 }
 export interface AdminOverview {
   now: number;

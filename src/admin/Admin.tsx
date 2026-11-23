@@ -8,6 +8,7 @@ import { LogView } from '../components/LogView';
 import { getFix } from '../lib/geo';
 import { setServerNow, shortDuration } from '../lib/time';
 import type { StoreInfo } from '../../shared/config';
+import { WastePanel } from './Waste';
 
 // Head-office screen. English only (internal tool).
 
@@ -17,6 +18,9 @@ export function Admin() {
   const [edit, setEdit] = useState<Partial<AdminStore> | null>(null);
   const [viewing, setViewing] = useState<AdminStore | null>(null);
   const [q, setQ] = useState('');
+  const [tab, setTab] = useState<'stores' | 'waste'>('stores');
+  const [filter, setFilter] = useState({ city: '', rom: '', area_manager: '' });
+  const [pinList, setPinList] = useState<{ code: string; name: string; pin: string }[] | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -36,8 +40,30 @@ export function Admin() {
   const filtered = useMemo(() => {
     if (!data) return [];
     const s = q.trim().toLowerCase();
-    return data.stores.filter((x) => !s || x.code.toLowerCase().includes(s) || x.name.toLowerCase().includes(s) || x.name_ar.includes(s));
-  }, [data, q]);
+    return data.stores.filter(
+      (x) =>
+        (!s || [x.code, x.name, x.name_ar, x.city, x.area_manager, x.rom, x.syrve_code].some((v) => (v || '').toLowerCase().includes(s))) &&
+        (!filter.city || x.city === filter.city) &&
+        (!filter.rom || x.rom === filter.rom) &&
+        (!filter.area_manager || x.area_manager === filter.area_manager),
+    );
+  }, [data, q, filter]);
+
+  const options = useMemo(() => {
+    const uniq = (k: 'city' | 'rom' | 'area_manager') => [...new Set((data?.stores ?? []).map((s) => s[k]).filter(Boolean))].sort();
+    return { city: uniq('city'), rom: uniq('rom'), area_manager: uniq('area_manager') };
+  }, [data]);
+
+  const generatePins = async (body: { ids?: number[]; onlyMissing?: boolean }) => {
+    try {
+      const r = await adminApi.pins(body);
+      if (!r.pins.length) return toast('Every active store already has a PIN.');
+      setPinList(r.pins);
+      void load();
+    } catch {
+      toast.error('Could not generate PINs');
+    }
+  };
 
   if (state === 'loading') return <div className="splash"><Logo size={56} /></div>;
   if (state === 'login') return <AdminLogin onDone={load} />;
@@ -65,15 +91,58 @@ export function Admin() {
       </header>
 
       <main className="admin-main">
+        <div className="segmented admin-tabs">
+          <button data-active={tab === 'stores' || undefined} onClick={() => setTab('stores')}>
+            Stores
+          </button>
+          <button data-active={tab === 'waste' || undefined} onClick={() => setTab('waste')}>
+            Bean waste
+          </button>
+        </div>
+
+        {tab === 'waste' ? (
+          <WastePanel stores={filtered} today={data.today} filterNote={[filter.city, filter.rom, filter.area_manager, q.trim()].filter(Boolean).join(' · ')} />
+        ) : (
+          <>
         <Usage data={data} onRefresh={load} />
 
         <section className="card">
           <div className="admin-row">
-            <h2 className="card-title">Stores</h2>
-            <input className="input admin-search" placeholder="Search code or name" value={q} onChange={(e) => setQ(e.target.value)} />
+            <h2 className="card-title">
+              Stores <span className="muted small">{filtered.length} of {data.stores.length}</span>
+            </h2>
+            <input className="input admin-search" placeholder="Search code, name, manager" value={q} onChange={(e) => setQ(e.target.value)} />
+            {data.stores.some((s) => s.active && !s.has_pin) && (
+              <button className="btn btn-ghost" onClick={() => generatePins({ onlyMissing: true })}>
+                Generate missing PINs ({data.stores.filter((s) => s.active && !s.has_pin).length})
+              </button>
+            )}
             <button className="btn btn-primary" onClick={() => setEdit({ espresso_mode: 'pair', radius_m: 500, active: 1 })}>
               Add store
             </button>
+          </div>
+          <div className="filters">
+            {(
+              [
+                ['city', 'All cities'],
+                ['rom', 'All ROMs'],
+                ['area_manager', 'All area managers'],
+              ] as const
+            ).map(([k, all]) => (
+              <select key={k} className="input select" value={filter[k]} onChange={(e) => setFilter((f) => ({ ...f, [k]: e.target.value }))}>
+                <option value="">{all}</option>
+                {options[k].map((o) => (
+                  <option key={o} value={o}>
+                    {o}
+                  </option>
+                ))}
+              </select>
+            ))}
+            {(filter.city || filter.rom || filter.area_manager) && (
+              <button className="btn btn-ghost" onClick={() => setFilter({ city: '', rom: '', area_manager: '' })}>
+                Clear
+              </button>
+            )}
           </div>
           {filtered.length === 0 ? (
             <p className="empty">No stores yet. Add the first one.</p>
@@ -93,17 +162,31 @@ export function Admin() {
                     transition={{ duration: 0.3, delay: Math.min(i, 10) * 0.02, ease: [0.23, 1, 0.32, 1] }}
                   >
                     <div className="store-card-head">
-                      <span className="store-code">{s.code}</span>
+                      <span className="store-code">
+                        {s.code}
+                        {s.syrve_code && <span className="muted small"> · {s.syrve_code}</span>}
+                      </span>
+                      {!s.has_pin ? (
+                        <span className="status-chip" data-warn>No PIN</span>
+                      ) : (
                       <span className="status-chip" data-on={!stale || undefined} title="Last log">
                         {lastAgo == null ? 'No logs today' : lastAgo < 60000 ? 'Just now' : `${shortDuration(lastAgo, 'min')} ago`}
                       </span>
+                      )}
                     </div>
                     <div className="store-name">{s.name}</div>
                     {s.name_ar && <div className="store-name-ar" dir="rtl">{s.name_ar}</div>}
+                    {(s.city || s.area_manager) && (
+                      <div className="store-people">
+                        {s.city && <span>{s.city}</span>}
+                        {s.area_manager && <span>AM: {titleCase(s.area_manager)}</span>}
+                        {s.rom && <span>ROM: {titleCase(s.rom)}</span>}
+                      </div>
+                    )}
                     <div className="store-meta">
                       <span>{st?.logs ?? 0} logs</span>
                       <span>{((st?.discarded_ml ?? 0) / 1000).toFixed(2).replace(/\.?0+$/, '') || 0} L discarded</span>
-                      <span>{s.lat != null ? `GPS ${s.radius_m} m` : 'No GPS lock'}</span>
+                      <span title={s.coord_evidence}>{s.lat != null ? `GPS ${s.radius_m} m${s.coord_evidence && s.coord_evidence !== 'Confirmed' ? ' (unconfirmed)' : ''}` : 'No GPS lock'}</span>
                       <span>{s.espresso_mode === 'single' ? '1 espresso' : 'Hot + cold'}</span>
                     </div>
                     <div className="btn-row">
@@ -119,8 +202,42 @@ export function Admin() {
               })}
             </div>
           )}
+          <p className="footnote">Store list, cities, area managers and ROMs sync weekly from Master_Location_Mapping.xlsx.</p>
         </section>
+          </>
+        )}
       </main>
+
+      <Sheet open={!!pinList} onOpenChange={(o) => !o && setPinList(null)} title="New store PINs">
+        {pinList && (
+          <div className="sheet-body sheet-scroll" dir="ltr">
+            <p className="sheet-text">
+              These PINs are shown <b>only once</b>. Download the list now and send each store its own PIN.
+            </p>
+            <button
+              className="btn btn-primary btn-lg"
+              onClick={() => {
+                const csv = ['Store code,Store name,PIN', ...pinList.map((p) => `"${p.code}","${p.name.replace(/"/g, '""')}","${p.pin}"`)].join('\n');
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' }));
+                a.download = `HM-store-PINs-${data.today}.csv`;
+                a.click();
+              }}
+            >
+              Download PINs (CSV)
+            </button>
+            <div className="pin-list">
+              {pinList.map((p) => (
+                <div key={p.code} className="pin-row">
+                  <span className="store-code">{p.code}</span>
+                  <span className="pin-name">{p.name}</span>
+                  <span className="num pin">{p.pin}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </Sheet>
 
       <StoreEditor
         value={edit}
@@ -140,6 +257,10 @@ export function Admin() {
       </Sheet>
     </div>
   );
+}
+
+function titleCase(s: string) {
+  return s.toLowerCase().replace(/(^|[\s(-])([a-z])/g, (_, a, b) => a + b.toUpperCase());
 }
 
 function toInfo(s: AdminStore): StoreInfo {
@@ -297,6 +418,7 @@ function StoreEditor({ value, onClose, onSaved }: { value: Partial<AdminStore> |
       radius_m: Number(f.radius_m) || 500,
       espresso_mode: f.espresso_mode,
       active: !!f.active,
+      ...(value?.source === 'master' ? {} : { city: f.city ?? '', area_manager: f.area_manager ?? '', rom: f.rom ?? '' }),
       ...(f.pin ? { pin: f.pin } : {}),
     };
     setBusy(true);
@@ -326,11 +448,16 @@ function StoreEditor({ value, onClose, onSaved }: { value: Partial<AdminStore> |
       <form className="sheet-body form-grid" onSubmit={save} dir="ltr">
         <label className="field">
           <span>Store code</span>
-          <input className="input" value={f.code ?? ''} onChange={(e) => set('code', e.target.value.toUpperCase())} required placeholder="RUH-014" />
+          <input className="input" value={f.code ?? ''} onChange={(e) => set('code', e.target.value.toUpperCase())} required placeholder="RIY031" disabled={value?.source === 'master'} />
         </label>
         <label className="field">
           <span>{creating ? 'PIN' : 'New PIN (leave empty to keep; changing signs out the store)'}</span>
-          <input className="input num" inputMode="numeric" value={f.pin ?? ''} onChange={(e) => set('pin', e.target.value.replace(/\D/g, ''))} maxLength={8} required={creating} />
+          <div className="add-row">
+            <input className="input num" inputMode="numeric" value={f.pin ?? ''} onChange={(e) => set('pin', e.target.value.replace(/\D/g, ''))} maxLength={8} required={creating} />
+            <button type="button" className="btn btn-ghost" onClick={() => set('pin', String(100000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 900000)))}>
+              Random
+            </button>
+          </div>
         </label>
         <label className="field">
           <span>Name (English)</span>
@@ -361,6 +488,12 @@ function StoreEditor({ value, onClose, onSaved }: { value: Partial<AdminStore> |
             </button>
           </div>
         </label>
+        {(['city', 'area_manager', 'rom'] as const).map((k) => (
+          <label className="field" key={k}>
+            <span>{{ city: 'City', area_manager: 'Area manager', rom: 'ROM' }[k]}{value?.source === 'master' ? ' (from master file)' : ''}</span>
+            <input className="input" value={(f[k] as string) ?? ''} onChange={(e) => set(k, e.target.value)} disabled={value?.source === 'master'} />
+          </label>
+        ))}
         <label className="field">
           <span>Allowed radius (m)</span>
           <input className="input num" inputMode="numeric" value={f.radius_m ?? 500} onChange={(e) => set('radius_m', e.target.value.replace(/\D/g, ''))} />

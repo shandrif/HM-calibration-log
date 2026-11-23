@@ -32,6 +32,7 @@ export function LoginView({ onDone }: { onDone: () => void }) {
       if (err instanceof ApiError) {
         if (err.code === 'bad_login') setMsg(t.badLogin);
         else if (err.code === 'locked') setMsg(t.locked);
+        else if (err.code === 'no_pin') setMsg(t.noPin);
         else if (err.code === 'outside') setMsg(fmt(t.outside, { d: formatDistance(Number(err.data.distance)), r: formatDistance(500) }));
         else if (err.code === 'no_location') setMsg(t.noLocation);
         else if (err.code === 'offline') setMsg(t.offline);

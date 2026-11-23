@@ -18,6 +18,23 @@ Website for 100+ HM stores to log espresso and drip calibrations and track batch
 - **Log:** any of the last 92 days, **Download PDF** / **Share** (built on the device).
 - **Head office:** `/admin` — add/edit stores, PINs, GPS location, radius, espresso setup; see today's activity per store, download any store's PDF, and see free-tier usage with a warning at 70%.
 
+## Store master data (weekly sync)
+
+Stores, cities, regions, area managers and ROMs come from **Master_Location_Mapping.xlsx** on SharePoint (sheet `Location_Mapping`). A scheduled task runs every Sunday at 04:47 Riyadh time, reads the sheet with the Microsoft 365 connector and runs:
+
+```bash
+python3 -I scripts/sync_stores.py <exported sheet file>
+```
+
+- Only `Branch` and `Kiosk` rows are imported; the login code is `SOURCE_SUBINVENTORY` (e.g. `RIY031`).
+- PINs, staff, espresso setup and radius are never changed. New stores have no PIN until head office clicks **Generate missing PINs** in `/admin`.
+- Stores removed from the sheet are deactivated, never deleted. The script refuses to write if fewer than 50 stores parse.
+- The sheet is **not** stored in this repository (it contains staff names and emails).
+
+## Bean waste report
+
+`/admin` → **Bean waste**: litres of Ethiopian and Brazilian drip discarded (hot/iced split) for today, 7, 30 or 92 days, grouped by store, area manager, ROM or city, with CSV export. Finished days come from a nightly summary (one row per day), so the report stays cheap on the free tier.
+
 ## Free-tier design
 
 - One database row per store per day holds all its batches, so a log is **1 row written** and the nightly clean-up deletes **1 row per store per day**.

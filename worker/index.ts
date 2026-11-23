@@ -136,6 +136,7 @@ app.post('/api/login', async (c) => {
   const now = Date.now();
   if (!store || !store.active) return err(c, 401, 'bad_login');
   if (store.locked_until > now) return err(c, 429, 'locked', { until: store.locked_until });
+  if (!store.pin_hash) return err(c, 401, 'no_pin');
   const hash = await hashPin(pin, store.pin_salt, c.env.SESSION_SECRET);
   if (!safeEqual(hash, store.pin_hash)) {
     const fails = store.fail_count + 1;
@@ -303,7 +304,10 @@ app.get('/api/admin/overview', requireAdmin, async (c) => {
   const today = dayKey(now, tz(c.env));
   const [stores, stats, usageRow] = await Promise.all([
     c.env.DB.prepare(
-      'SELECT id, code, name, name_ar, lat, lng, radius_m, espresso_mode, active, staff FROM stores ORDER BY code',
+      `SELECT id, code, name, name_ar, lat, lng, radius_m, espresso_mode, active, syrve_code, city, region, zone, sub_zone,
+              area_manager, rom, location_type, drive_thru, coord_evidence, opening_date, source, synced_at,
+              pin_hash != '' AS has_pin
+       FROM stores ORDER BY code`,
     ).all(),
     c.env.DB.prepare(
       `SELECT d.store_id AS id,
@@ -340,6 +344,10 @@ type StoreInput = {
   radius_m?: number;
   espresso_mode?: EspressoMode;
   active?: boolean;
+  city?: string;
+  region?: string;
+  area_manager?: string;
+  rom?: string;
 };
 
 function validateStoreInput(b: StoreInput, creating: boolean): string | null {
@@ -402,6 +410,7 @@ app.put('/api/admin/stores/:id', requireAdmin, async (c) => {
   if (b.radius_m !== undefined) set('radius_m', b.radius_m);
   if (b.espresso_mode !== undefined) set('espresso_mode', b.espresso_mode);
   if (b.active !== undefined) set('active', b.active ? 1 : 0);
+  for (const k of ['city', 'region', 'area_manager', 'rom'] as const) if (b[k] !== undefined) set(k, String(b[k]).trim().slice(0, 80));
   if (b.pin) {
     const salt = randomId(12);
     set('pin_salt', salt);
@@ -427,6 +436,63 @@ app.get('/api/admin/log', requireAdmin, async (c) => {
   const store = await c.env.DB.prepare('SELECT * FROM stores WHERE id = ?1').bind(id).first<StoreRow>();
   if (!store) return err(c, 404, 'not_found');
   return c.json({ day, store: storeInfo(store), batches: await batchesFor(c.env, id, [day]) });
+});
+
+/** Give stores a new random 6-digit PIN. Returns the PINs once (they are stored hashed). */
+app.post('/api/admin/pins', requireAdmin, async (c) => {
+  const { ids, onlyMissing } = await readBody<{ ids?: number[]; onlyMissing?: boolean }>(c);
+  const { results } = await c.env.DB.prepare(`SELECT id, code, name, pin_hash FROM stores WHERE active = 1 ORDER BY code`).all<{
+    id: number;
+    code: string;
+    name: string;
+    pin_hash: string;
+  }>();
+  const targets = results.filter((s) => (ids?.length ? ids.includes(s.id) : true) && (!onlyMissing || !s.pin_hash));
+  const out: { id: number; code: string; name: string; pin: string }[] = [];
+  const stmts: D1PreparedStatement[] = [];
+  for (const s of targets) {
+    const pin = String(100000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 900000));
+    const salt = randomId(12);
+    stmts.push(
+      c.env.DB.prepare(
+        `UPDATE stores SET pin_salt = ?1, pin_hash = ?2, pin_ver = pin_ver + 1, fail_count = 0, locked_until = 0 WHERE id = ?3`,
+      ).bind(salt, await hashPin(pin, salt, c.env.SESSION_SECRET), s.id),
+    );
+    out.push({ id: s.id, code: s.code, name: s.name, pin });
+  }
+  if (stmts.length) await c.env.DB.batch(stmts);
+  return c.json({ pins: out });
+});
+
+/** Discarded drip per store and bean, for a range of days (max 92). */
+app.get('/api/admin/waste', requireAdmin, async (c) => {
+  const today = dayKey(Date.now(), tz(c.env));
+  const from = c.req.query('from') ?? today;
+  const to = c.req.query('to') ?? today;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || from > to) return err(c, 400, 'bad_range');
+  const totals: Record<string, Record<string, [number, number, number]>> = {};
+  const add = (sid: string, slot: string, v: [number, number, number]) => {
+    const t = ((totals[sid] ??= {})[slot] ??= [0, 0, 0]);
+    t[0] += v[0];
+    t[1] += v[1];
+    t[2] += v[2];
+  };
+  // finished days come from the nightly summary (1 row per day)
+  const { results } = await c.env.DB.prepare('SELECT day, data FROM stats_daily WHERE day >= ?1 AND day <= ?2')
+    .bind(from, to)
+    .all<{ day: string; data: string }>();
+  const covered = new Set(results.map((r) => r.day));
+  for (const r of results) {
+    const d = safeJson<Record<string, Record<string, [number, number, number]>>>(r.data, {});
+    for (const [sid, slots] of Object.entries(d)) for (const [slot, v] of Object.entries(slots)) add(sid, slot, v);
+  }
+  // today (and any day not summarised yet) are computed live
+  const missing: string[] = [];
+  for (let d = from; d <= to && missing.length < 93; d = nextDay(d)) if (!covered.has(d) && d <= today) missing.push(d);
+  for (const day of missing) {
+    for (const r of await aggregateDay(c.env, day)) add(String(r.sid), r.slot, [r.ml, r.n, r.batches]);
+  }
+  return c.json({ from, to, today, totals });
 });
 
 app.post('/api/admin/usage/refresh', requireAdmin, async (c) => {
@@ -489,16 +555,60 @@ async function sendExpiryPushes(env: Env, scheduled: number) {
   }
 }
 
-async function purgeOld(env: Env) {
-  const days = Number(env.RETENTION_DAYS || 92);
-  const cutoff = dayKey(Date.now() - days * 24 * 3600 * 1000, tz(env));
-  await env.DB.prepare('DELETE FROM days WHERE day < ?1').bind(cutoff).run();
+function nextDay(day: string) {
+  const d = new Date(day + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Totals for one day, computed inside the database (keeps Worker CPU tiny). Reset batches are ignored. */
+async function aggregateDay(env: Env, day: string) {
+  const { results } = await env.DB.prepare(
+    `SELECT d.store_id AS sid, json_extract(j.value, '$.s') AS slot,
+            SUM(COALESCE(json_extract(j.value, '$.dl'), 0)) AS ml,
+            SUM(CASE WHEN COALESCE(json_extract(j.value, '$.dl'), 0) > 0 THEN 1 ELSE 0 END) AS n,
+            COUNT(*) AS batches
+     FROM days d, json_each(d.batches) j
+     WHERE d.day = ?1 AND json_extract(j.value, '$.v') IS NULL
+     GROUP BY d.store_id, slot`,
+  )
+    .bind(day)
+    .all<{ sid: number; slot: string; ml: number; n: number; batches: number }>();
+  return results;
+}
+
+/** Nightly: summarise yesterday (and fill any gaps in the last week), then delete data older than 92 days. */
+async function nightly(env: Env) {
+  const now = Date.now();
+  const days: string[] = [];
+  for (let i = 1; i <= 7; i++) days.push(dayKey(now - i * 24 * 3600 * 1000, tz(env)));
+  const { results: have } = await env.DB.prepare(
+    `SELECT day FROM stats_daily WHERE day IN (${days.map((_, i) => `?${i + 1}`).join(',')})`,
+  )
+    .bind(...days)
+    .all<{ day: string }>();
+  const done = new Set(have.map((r) => r.day));
+  for (const day of days) {
+    if (done.has(day) && day !== days[0]) continue;
+    const rows = await aggregateDay(env, day);
+    const data: Record<string, Record<string, [number, number, number]>> = {};
+    for (const r of rows) (data[r.sid] ??= {})[r.slot] = [r.ml, r.n, r.batches];
+    await env.DB.prepare(`INSERT INTO stats_daily (day, data) VALUES (?1, ?2) ON CONFLICT (day) DO UPDATE SET data = excluded.data`)
+      .bind(day, JSON.stringify(data))
+      .run();
+  }
+  const keep = Number(env.RETENTION_DAYS || 92);
+  const cutoff = dayKey(now - keep * 24 * 3600 * 1000, tz(env));
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM days WHERE day < ?1').bind(cutoff),
+    env.DB.prepare('DELETE FROM stats_daily WHERE day < ?1').bind(cutoff),
+  ]);
 }
 
 export default {
   fetch: app.fetch,
   async scheduled(event: ScheduledController, env: Env, ctx: ExecutionContext) {
-    if (event.cron === '30 21 * * *') ctx.waitUntil(purgeOld(env));
+    if (event.cron === '30 21 * * *') ctx.waitUntil(nightly(env));
     else if (event.cron === '7 * * * *') {
       if (env.ANALYTICS_TOKEN && env.ACCOUNT_ID) ctx.waitUntil(refreshUsage(env).then(() => undefined));
     } else ctx.waitUntil(sendExpiryPushes(env, event.scheduledTime));
