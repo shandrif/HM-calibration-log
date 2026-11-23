@@ -104,7 +104,8 @@ export function LoginView({ onDone }: { onDone: () => void }) {
                 await getFix();
                 setLocBlocked(false);
               } catch {
-                setLocBlocked(true);
+                // Safari only picks up a changed setting after the page reloads
+                window.location.reload();
               } finally {
                 setBusy(false);
               }
