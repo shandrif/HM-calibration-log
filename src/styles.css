@@ -3454,3 +3454,177 @@ button.batch-tr:hover {
   white-space: nowrap;
   flex-shrink: 0;
 }
+
+/* ---------------------------------------------------------------- bean batch "bag labels" */
+.bag-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 20px;
+}
+@media (min-width: 1100px) {
+  .bag-row {
+    max-width: 760px;
+  }
+}
+.bag {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px 14px;
+  border-radius: 20px;
+  text-align: start;
+  background-color: var(--glass);
+  background-image: var(--glass-highlight);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  transition:
+    transform 160ms var(--ease-out),
+    box-shadow 220ms var(--ease-out);
+}
+.bag::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: var(--glass-rim);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+.bag:active {
+  transform: scale(0.97);
+}
+@media (hover: hover) and (pointer: fine) {
+  .bag:hover {
+    transform: translateY(-1px);
+  }
+}
+.bag-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.bag-top > svg {
+  margin-inline-start: auto;
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+[dir='rtl'] .bag-top > svg {
+  transform: scaleX(-1);
+}
+.bag-icon {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  background: rgba(29, 27, 23, 0.08);
+  color: #1d1b17;
+}
+.bag-icon svg {
+  width: 18px;
+  height: 18px;
+}
+.bag[data-bean='ethiopian'] .bag-icon {
+  background: rgba(212, 179, 139, 0.32);
+  color: #8a5f2a;
+}
+.bag[data-bean='brazilian'] .bag-icon {
+  background: rgba(132, 198, 178, 0.34);
+  color: #1f6f5d;
+}
+.bag[data-missing] .bag-icon {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px rgba(169, 121, 59, 0.45);
+  color: rgba(169, 121, 59, 0.55);
+}
+.bag-name {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bag-perf {
+  height: 0;
+  margin: 0 -14px;
+  border-top: 1.5px dashed var(--line);
+}
+.bag-code {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: start;
+}
+[dir='rtl'] .bag-code {
+  text-align: right;
+}
+.bag[data-missing] .bag-code {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--tan-deep);
+}
+.bag-meta {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (max-width: 520px) {
+  .bag-row {
+    gap: 8px;
+  }
+  .bag {
+    padding: 10px;
+    gap: 7px;
+    border-radius: 18px;
+  }
+  .bag-perf {
+    margin: 0 -10px;
+  }
+  .bag-icon {
+    width: 26px;
+    height: 26px;
+    border-radius: 9px;
+  }
+  .bag-icon svg {
+    width: 14px;
+    height: 14px;
+  }
+  .bag-name {
+    font-size: 12px;
+  }
+  .bag-top > svg {
+    display: none;
+  }
+  .bag-code {
+    font-size: 14px;
+  }
+  .bag[data-missing] .bag-code {
+    font-size: 13px;
+  }
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .bag-icon {
+    background: rgba(255, 255, 255, 0.1);
+    color: #f5ede3;
+  }
+}

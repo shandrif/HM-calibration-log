@@ -14,7 +14,7 @@ import { Grams } from './components/Grams';
 import { Sheet } from './components/Sheet';
 import { DoseStepper } from './components/DoseStepper';
 import { Logo } from './components/Logo';
-import { IconBoard, IconLog, IconMore, IconBell, IconPlus, IconUser, IconMinus } from './components/Icons';
+import { IconBoard, IconLog, IconMore, IconBell, IconPlus, IconUser, IconMinus, IconChevron } from './components/Icons';
 import { LoginView } from './components/LoginView';
 import { LogView } from './components/LogView';
 import { MoreView } from './components/MoreView';
@@ -653,18 +653,37 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
 
 // ---------------------------------------------------------------- bean batches
 
+function BeanIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden>
+      <ellipse cx="12" cy="12" rx="6.6" ry="9.2" transform="rotate(32 12 12)" fill="currentColor" />
+      <path d="M8.9 18.4c2.6-2.2 1.2-5.6 3.3-7.6 1.7-1.6 2.6-3.1 2.9-4.9" fill="none" stroke="rgba(255,255,255,.85)" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** Bag-label cards: bean, current batch code, and when / by whom the bag was opened. */
 function BeanStrip({ beans, onPick }: { beans: StoreInfo['beans']; onPick: (b: BeanKey) => void }) {
   const { t } = useI18n();
   return (
-    <div className="bean-strip" role="group" aria-label={t.batches}>
+    <div className="bag-row" role="group" aria-label={t.batches}>
       {BEAN_KEYS.map((b) => {
-        const cur = beans?.[b]?.cur;
+        const info = beans?.[b];
+        const cur = info?.cur;
         return (
-          <button key={b} className="bean-chip" data-bean={b} data-missing={!cur || undefined} onClick={() => onPick(b)}>
-            <span className="bean-chip-name">{t[b === 'espresso' ? 'espresso' : b]}</span>
-            <span className="bean-chip-batch num" dir="ltr">
-              {cur ? `#${cur}` : t.addBatch}
+          <button key={b} className="bag" data-bean={b} data-missing={!cur || undefined} onClick={() => onPick(b)}>
+            <span className="bag-top">
+              <span className="bag-icon">
+                <BeanIcon />
+              </span>
+              <span className="bag-name">{t[b === 'espresso' ? 'espresso' : b]}</span>
+              <IconChevron dir="right" />
             </span>
+            <span className="bag-perf" aria-hidden />
+            <span className="bag-code num" dir="ltr">
+              {cur ?? `${t.addBatch} +`}
+            </span>
+            <span className="bag-meta num">{cur ? [clock(info!.at), info!.by].filter(Boolean).join(' · ') : t.tapToAdd}</span>
           </button>
         );
       })}
