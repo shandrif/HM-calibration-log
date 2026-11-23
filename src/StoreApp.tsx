@@ -7,7 +7,7 @@ import { useI18n, fmt, slotLabel } from './lib/i18n';
 import { useNow, setServerNow, nowMs, clock, dayKey } from './lib/time';
 import { useGeo, formatDistance } from './lib/geo';
 import { useWakeLock } from './lib/wakelock';
-import { unlockAudio, startAlarm, stopAlarm, chime } from './lib/sound';
+import { unlockAudio, startAlarm, stopAlarm, chime, onSoundBlocked, resumeAlarmIfNeeded } from './lib/sound';
 import { slotView, loadAcks, saveAcks, ls, lsSet, type SlotView } from './lib/board';
 import { Tile } from './components/Tile';
 import { Grams } from './components/Grams';
@@ -189,11 +189,28 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
     () => views.filter((v) => v.phase === 'expired' && v.current && !acks.has(v.current.id) && now - v.current.x < 6 * 3600 * 1000),
     [views, acks, now],
   );
+  // Sound needs a tap before browsers allow it: unlock on every tap anywhere (sign-in, gate, tiles…).
   useEffect(() => {
-    if (gated && alarming.length) startAlarm();
+    const onTap = () => unlockAudio();
+    const onVis = () => document.visibilityState === 'visible' && resumeAlarmIfNeeded();
+    window.addEventListener('pointerdown', onTap, true);
+    window.addEventListener('keydown', onTap, true);
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      window.removeEventListener('pointerdown', onTap, true);
+      window.removeEventListener('keydown', onTap, true);
+      document.removeEventListener('visibilitychange', onVis);
+      stopAlarm();
+    };
+  }, []);
+  const [soundBlocked, setSoundBlocked] = useState(false);
+  useEffect(() => onSoundBlocked(setSoundBlocked), []);
+  // Start even before the "Tap to begin" screen is dismissed: if the browser blocks it,
+  // the next tap anywhere starts it.
+  useEffect(() => {
+    if (alarming.length) startAlarm();
     else stopAlarm();
-  }, [gated, alarming.length]);
-  useEffect(() => stopAlarm, []);
+  }, [alarming.length]);
 
   const ackAll = () => {
     const next = new Set(acks);
@@ -339,9 +356,15 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
                 return `${v.def.group === 'espresso' ? l.group + ' ' + l.item : l.group + ' · ' + l.item}`;
               }).join(', ')}
             </span>
-            <button className="btn btn-light" onClick={ackAll}>
-              {t.stopAlarm}
-            </button>
+            {soundBlocked ? (
+              <button className="btn btn-light alarm-sound" onClick={() => unlockAudio()}>
+                🔊 {t.tapForSound}
+              </button>
+            ) : (
+              <button className="btn btn-light" onClick={ackAll}>
+                {t.stopAlarm}
+              </button>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
