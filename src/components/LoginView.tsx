@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { api, ApiError } from '../lib/api';
 import { getFix, formatDistance } from '../lib/geo';
+import { LocationHelp, locationBlocked } from './LocationHelp';
 import { useI18n, fmt } from '../lib/i18n';
 import { Logo } from './Logo';
 
@@ -11,6 +12,12 @@ export function LoginView({ onDone }: { onDone: () => void }) {
   const [pin, setPin] = useState('');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
+  const [locBlocked, setLocBlocked] = useState(false);
+
+  // If the browser already blocks location for this site, show the fix straight away.
+  useEffect(() => {
+    void locationBlocked().then((b) => b && setLocBlocked(true));
+  }, []);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -21,10 +28,12 @@ export function LoginView({ onDone }: { onDone: () => void }) {
       try {
         fix = await getFix();
       } catch {
-        setMsg(t.locationDenied);
+        setMsg('');
+        setLocBlocked(true);
         setBusy(false);
         return;
       }
+      setLocBlocked(false);
       setMsg('');
       await api.login(code, pin, fix);
       onDone();
@@ -86,6 +95,22 @@ export function LoginView({ onDone }: { onDone: () => void }) {
             required
           />
         </label>
+        {locBlocked && (
+          <LocationHelp
+            busy={busy}
+            onRetry={async () => {
+              setBusy(true);
+              try {
+                await getFix();
+                setLocBlocked(false);
+              } catch {
+                setLocBlocked(true);
+              } finally {
+                setBusy(false);
+              }
+            }}
+          />
+        )}
         {msg && (
           <motion.p className="login-msg" initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} role="status">
             {msg}
