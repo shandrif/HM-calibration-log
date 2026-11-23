@@ -43,6 +43,8 @@ export const Tile = memo(function Tile({ view, now, alarming, busy, onPrimary, o
 
   return (
     <article className="tile" data-phase={phase} data-alarm={alarming || undefined} aria-live="off">
+      {/* re-mounts on every state change so the light sweeps across the glass once */}
+      {phase !== 'none' && <span className="tile-shine" key={phase + (current?.id ?? '')} aria-hidden />}
       <header className="tile-head">
         <h3 className="tile-name">{item}</h3>
         {canUndo ? (

@@ -48,6 +48,7 @@ export function LoginView({ onDone }: { onDone: () => void }) {
       <button className="pill login-lang" onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')}>
         {lang === 'ar' ? 'EN' : 'ع'}
       </button>
+      <div className="liquid-blob" aria-hidden />
       <motion.form
         className="login-card"
         onSubmit={submit}

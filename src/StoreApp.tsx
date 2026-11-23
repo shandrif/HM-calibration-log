@@ -100,6 +100,7 @@ export function StoreApp() {
               setGated(true);
             }}
           >
+            <span className="liquid-blob" aria-hidden />
             <Logo size={72} />
             <div className="gate-store">{lang === 'ar' && store.name_ar ? store.name_ar : store.name}</div>
             <div className="gate-cta">{t.tapToBegin}</div>

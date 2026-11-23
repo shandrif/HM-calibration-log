@@ -353,6 +353,7 @@ function AdminLogin({ onDone }: { onDone: () => void }) {
   const [busy, setBusy] = useState(false);
   return (
     <div className="login" dir="ltr">
+      <div className="liquid-blob" aria-hidden />
       <motion.form
         className="login-card"
         initial={{ opacity: 0, y: 16, scale: 0.98 }}

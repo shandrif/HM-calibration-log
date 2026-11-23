@@ -4,6 +4,7 @@ import { Toaster } from 'sonner';
 import { I18nContext, STRINGS, getInitialLang, type Lang } from './lib/i18n';
 import { StoreApp } from './StoreApp';
 import { Admin } from './admin/Admin';
+import { LiquidBackground } from './components/LiquidBackground';
 
 export function App() {
   const [lang, setLangState] = useState<Lang>(getInitialLang);
@@ -34,6 +35,7 @@ export function App() {
   return (
     <I18nContext.Provider value={ctx}>
       <MotionConfig reducedMotion="user">
+        <LiquidBackground />
         {isAdmin ? <Admin /> : <StoreApp />}
         <Toaster position="top-center" dir={effective === 'ar' ? 'rtl' : 'ltr'} toastOptions={{ className: 'toast' }} />
       </MotionConfig>
