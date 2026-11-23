@@ -67,6 +67,7 @@ export function LogView({
   const sorted = batches ? [...batches].sort((a, b) => b.t - a.t) : [];
   const live = sorted.filter((b) => !b.v);
   const discarded = live.reduce((a, b) => a + (b.dl ?? 0), 0);
+  const shots = live.reduce((a, b) => a + (b.w1 ?? 0) + (b.w2 ?? 0), 0);
 
   return (
     <div className="logview">
@@ -97,6 +98,10 @@ export function LogView({
             {batches ? (discarded / 1000).toFixed(2).replace(/\.?0+$/, '') || '0' : '–'} <small>{t.litres}</small>
           </div>
           <div className="summary-label">{t.discarded}</div>
+        </div>
+        <div className="summary-item">
+          <div className="summary-value num">{batches ? shots : '–'}</div>
+          <div className="summary-label">{t.shotsThrown}</div>
         </div>
       </div>
 
@@ -150,6 +155,11 @@ export function LogView({
                     <span className="num">
                       {t.ends} {clock(b.x)}
                     </span>
+                    {!!(b.w1 || b.w2) && (
+                      <span className="entry-disc num">
+                        {t.thrown}: {t.dose1} ×{b.w1 ?? 0} · {t.dose2} ×{b.w2 ?? 0}
+                      </span>
+                    )}
                     {!!b.dl && (
                       <span className="entry-disc num">
                         <IconDrop /> {b.dl / 1000} {t.litres}

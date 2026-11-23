@@ -33,7 +33,7 @@ export const api = {
   login: (code: string, pin: string, fix: Fix) => req<{ ok: true }>('POST', '/api/login', { code, pin, fix }),
   logout: () => req('POST', '/api/logout'),
   state: () => req<StateResponse>('GET', '/api/state'),
-  start: (body: { slot: string; staff: string; d1?: number; d2?: number; fix: Fix }) =>
+  start: (body: { slot: string; staff: string; d1?: number; d2?: number; w1?: number; w2?: number; fix: Fix }) =>
     req<{ now: number; day: string; batch: Batch }>('POST', '/api/batches', body),
   void: (id: string, day: string) => req('POST', `/api/batches/${id}/void`, { day }),
   discard: (id: string, day: string, ml: number) => req('POST', `/api/batches/${id}/discard`, { day, ml }),
@@ -60,7 +60,7 @@ export interface WasteResponse {
   from: string;
   to: string;
   today: string;
-  totals: Record<string, Record<string, [number, number, number]>>; // storeId -> slot -> [ml, discards, batches]
+  totals: Record<string, Record<string, number[]>>; // storeId -> slot -> [ml, discards, batches, dose1 thrown, dose2 thrown]
 }
 
 export interface AdminStore {

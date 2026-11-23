@@ -8,6 +8,7 @@ import {
   slotDef,
   isValidDose,
   isValidDiscard,
+  isValidThrown,
   dayKey,
   GEOFENCE_DEFAULT_M,
 } from '../shared/config';
@@ -169,7 +170,7 @@ app.get('/api/state', requireStore, async (c) => {
 /** Start a batch: one row written. */
 app.post('/api/batches', requireStore, async (c) => {
   const store = c.get('store');
-  const body = await readBody<{ slot?: string; staff?: string; d1?: number; d2?: number; fix?: unknown }>(c);
+  const body = await readBody<{ slot?: string; staff?: string; d1?: number; d2?: number; w1?: number; w2?: number; fix?: unknown }>(c);
   const def = slotDef(String(body.slot));
   if (!def) return err(c, 400, 'bad_slot');
   const espressoSlots = store.espresso_mode === 'single' ? ['espresso'] : ['espresso_hot', 'espresso_cold'];
@@ -177,6 +178,7 @@ app.post('/api/batches', requireStore, async (c) => {
   const staff = String(body.staff ?? '').trim().slice(0, 40);
   if (!staff) return err(c, 400, 'no_staff');
   if (def.kind === 'espresso' && (!isValidDose(body.d1) || !isValidDose(body.d2))) return err(c, 400, 'bad_dose');
+  if ((body.w1 !== undefined && !isValidThrown(body.w1)) || (body.w2 !== undefined && !isValidThrown(body.w2))) return err(c, 400, 'bad_thrown');
   const geo = checkGeofence(store, parseFix(body.fix));
   if (!geo.ok) return err(c, 403, geo.reason, { distance: geo.distance });
 
@@ -186,6 +188,8 @@ app.post('/api/batches', requireStore, async (c) => {
   if (def.kind === 'espresso') {
     batch.d1 = body.d1;
     batch.d2 = body.d2;
+    if (body.w1) batch.w1 = body.w1;
+    if (body.w2) batch.w2 = body.w2;
   }
   if (geo.distance != null) batch.m = geo.distance;
   const day = dayKey(now, tz(c.env));
@@ -470,12 +474,11 @@ app.get('/api/admin/waste', requireAdmin, async (c) => {
   const from = c.req.query('from') ?? today;
   const to = c.req.query('to') ?? today;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || from > to) return err(c, 400, 'bad_range');
-  const totals: Record<string, Record<string, [number, number, number]>> = {};
-  const add = (sid: string, slot: string, v: [number, number, number]) => {
-    const t = ((totals[sid] ??= {})[slot] ??= [0, 0, 0]);
-    t[0] += v[0];
-    t[1] += v[1];
-    t[2] += v[2];
+  // per slot: [discarded ml, discard count, batches, dose-1 shots thrown, dose-2 shots thrown]
+  const totals: Record<string, Record<string, number[]>> = {};
+  const add = (sid: string, slot: string, v: number[]) => {
+    const t = ((totals[sid] ??= {})[slot] ??= [0, 0, 0, 0, 0]);
+    for (let i = 0; i < 5; i++) t[i] += v[i] ?? 0;
   };
   // finished days come from the nightly summary (1 row per day)
   const { results } = await c.env.DB.prepare('SELECT day, data FROM stats_daily WHERE day >= ?1 AND day <= ?2')
@@ -483,14 +486,14 @@ app.get('/api/admin/waste', requireAdmin, async (c) => {
     .all<{ day: string; data: string }>();
   const covered = new Set(results.map((r) => r.day));
   for (const r of results) {
-    const d = safeJson<Record<string, Record<string, [number, number, number]>>>(r.data, {});
+    const d = safeJson<Record<string, Record<string, number[]>>>(r.data, {});
     for (const [sid, slots] of Object.entries(d)) for (const [slot, v] of Object.entries(slots)) add(sid, slot, v);
   }
   // today (and any day not summarised yet) are computed live
   const missing: string[] = [];
   for (let d = from; d <= to && missing.length < 93; d = nextDay(d)) if (!covered.has(d) && d <= today) missing.push(d);
   for (const day of missing) {
-    for (const r of await aggregateDay(c.env, day)) add(String(r.sid), r.slot, [r.ml, r.n, r.batches]);
+    for (const r of await aggregateDay(c.env, day)) add(String(r.sid), r.slot, [r.ml, r.n, r.batches, r.w1, r.w2]);
   }
   return c.json({ from, to, today, totals });
 });
@@ -567,13 +570,15 @@ async function aggregateDay(env: Env, day: string) {
     `SELECT d.store_id AS sid, json_extract(j.value, '$.s') AS slot,
             SUM(COALESCE(json_extract(j.value, '$.dl'), 0)) AS ml,
             SUM(CASE WHEN COALESCE(json_extract(j.value, '$.dl'), 0) > 0 THEN 1 ELSE 0 END) AS n,
-            COUNT(*) AS batches
+            COUNT(*) AS batches,
+            SUM(COALESCE(json_extract(j.value, '$.w1'), 0)) AS w1,
+            SUM(COALESCE(json_extract(j.value, '$.w2'), 0)) AS w2
      FROM days d, json_each(d.batches) j
      WHERE d.day = ?1 AND json_extract(j.value, '$.v') IS NULL
      GROUP BY d.store_id, slot`,
   )
     .bind(day)
-    .all<{ sid: number; slot: string; ml: number; n: number; batches: number }>();
+    .all<{ sid: number; slot: string; ml: number; n: number; batches: number; w1: number; w2: number }>();
   return results;
 }
 
@@ -591,8 +596,8 @@ async function nightly(env: Env) {
   for (const day of days) {
     if (done.has(day) && day !== days[0]) continue;
     const rows = await aggregateDay(env, day);
-    const data: Record<string, Record<string, [number, number, number]>> = {};
-    for (const r of rows) (data[r.sid] ??= {})[r.slot] = [r.ml, r.n, r.batches];
+    const data: Record<string, Record<string, number[]>> = {};
+    for (const r of rows) (data[r.sid] ??= {})[r.slot] = [r.ml, r.n, r.batches, r.w1, r.w2];
     await env.DB.prepare(`INSERT INTO stats_daily (day, data) VALUES (?1, ?2) ON CONFLICT (day) DO UPDATE SET data = excluded.data`)
       .bind(day, JSON.stringify(data))
       .run();

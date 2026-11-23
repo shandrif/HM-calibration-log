@@ -15,7 +15,7 @@ ALTER TABLE stores ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'; -- 'manual'
 ALTER TABLE stores ADD COLUMN synced_at INTEGER NOT NULL DEFAULT 0;
 
 -- One row per day with every store's totals, written once a night.
--- data = {"<storeId>": {"<slot>": [discarded_ml, discard_count, batches]}}
+-- data = {"<storeId>": {"<slot>": [discarded_ml, discard_count, batches, dose1_thrown, dose2_thrown]}}
 CREATE TABLE stats_daily (
   day TEXT PRIMARY KEY,
   data TEXT NOT NULL

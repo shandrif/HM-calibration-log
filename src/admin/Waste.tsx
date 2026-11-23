@@ -27,6 +27,8 @@ interface Row {
   events: number;
   batches: number;
   stores: number;
+  w1: number;
+  w2: number;
 }
 
 export function WastePanel({ stores, today, filterNote }: { stores: AdminStore[]; today: string; filterNote?: string }) {
@@ -63,6 +65,8 @@ export function WastePanel({ stores, today, filterNote }: { stores: AdminStore[]
           events: 0,
           batches: 0,
           stores: 0,
+          w1: 0,
+          w2: 0,
         });
       groups.get(key)!.stores++;
     }
@@ -72,7 +76,10 @@ export function WastePanel({ stores, today, filterNote }: { stores: AdminStore[]
       const key = groupBy === 'store' ? sid : (s[groupBy] || 'Unassigned').trim();
       const g = groups.get(key);
       if (!g) continue;
-      for (const [slot, [ml, n, batches]] of Object.entries(slots)) {
+      for (const [slot, [ml, n, batches, w1 = 0, w2 = 0]] of Object.entries(slots)) {
+        g.w1 += w1;
+        g.w2 += w2;
+        if (slot.startsWith('espresso')) continue;
         g.batches += batches;
         if (!ml) continue;
         g.events += n;
@@ -86,16 +93,16 @@ export function WastePanel({ stores, today, filterNote }: { stores: AdminStore[]
   }, [data, stores, groupBy]);
 
   const total = rows.reduce(
-    (t, r) => ({ eth: t.eth + r.eth, bra: t.bra + r.bra, ethHot: t.ethHot + r.ethHot, ethIced: t.ethIced + r.ethIced, braHot: t.braHot + r.braHot, braIced: t.braIced + r.braIced, events: t.events + r.events }),
-    { eth: 0, bra: 0, ethHot: 0, ethIced: 0, braHot: 0, braIced: 0, events: 0 },
+    (t, r) => ({ eth: t.eth + r.eth, bra: t.bra + r.bra, ethHot: t.ethHot + r.ethHot, ethIced: t.ethIced + r.ethIced, braHot: t.braHot + r.braHot, braIced: t.braIced + r.braIced, events: t.events + r.events, w1: t.w1 + r.w1, w2: t.w2 + r.w2 }),
+    { eth: 0, bra: 0, ethHot: 0, ethIced: 0, braHot: 0, braIced: 0, events: 0, w1: 0, w2: 0 },
   );
   const max = Math.max(1, ...rows.map((r) => r.eth + r.bra));
-  const withWaste = rows.filter((r) => r.eth + r.bra > 0);
+  const withWaste = rows.filter((r) => r.eth + r.bra + r.w1 + r.w2 > 0);
   const storesWithWaste = groupBy === 'store' ? withWaste.length : rows.filter((r) => r.eth + r.bra > 0).reduce((a, r) => a + r.stores, 0);
 
   const exportCsv = () => {
-    const head = ['Group', 'Detail', 'Ethiopian L', 'Ethiopian hot L', 'Ethiopian iced L', 'Brazilian L', 'Brazilian hot L', 'Brazilian iced L', 'Total L', 'Discard events', 'Drip batches'];
-    const lines = rows.map((r) => [r.label, r.sub, L(r.eth), L(r.ethHot), L(r.ethIced), L(r.bra), L(r.braHot), L(r.braIced), L(r.eth + r.bra), r.events, r.batches]);
+    const head = ['Group', 'Detail', 'Ethiopian L', 'Ethiopian hot L', 'Ethiopian iced L', 'Brazilian L', 'Brazilian hot L', 'Brazilian iced L', 'Total drip L', 'Drip discard events', 'Drip batches', 'Espresso dose 1 shots thrown', 'Espresso dose 2 shots thrown'];
+    const lines = rows.map((r) => [r.label, r.sub, L(r.eth), L(r.ethHot), L(r.ethIced), L(r.bra), L(r.braHot), L(r.braIced), L(r.eth + r.bra), r.events, r.batches, r.w1, r.w2]);
     const csv = [head, ...lines].map((l) => l.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a');
@@ -108,7 +115,7 @@ export function WastePanel({ stores, today, filterNote }: { stores: AdminStore[]
   return (
     <section className="card">
       <div className="admin-row">
-        <h2 className="card-title">Drip waste by bean</h2>
+        <h2 className="card-title">Waste by bean</h2>
         <div className="segmented">
           {RANGES.map((r) => (
             <button key={r.key} data-active={range === r.key || undefined} onClick={() => setRange(r.key)}>
@@ -126,6 +133,15 @@ export function WastePanel({ stores, today, filterNote }: { stores: AdminStore[]
           <div className="waste-total-value num">{data ? L(total.eth + total.bra) : '–'} <small>L</small></div>
           <div className="waste-total-sub">
             {total.events} discards · {storesWithWaste} of {stores.length} stores
+          </div>
+        </div>
+        <div className="waste-total" data-tone="esp">
+          <div className="waste-total-label">
+            <i className="dot-esp" /> Espresso shots thrown
+          </div>
+          <div className="waste-total-value num">{data ? total.w1 + total.w2 : '–'}</div>
+          <div className="waste-total-sub num">
+            Dose 1: {total.w1} · Dose 2: {total.w2}
           </div>
         </div>
       </div>
@@ -155,21 +171,23 @@ export function WastePanel({ stores, today, filterNote }: { stores: AdminStore[]
       <div className="waste-legend">
         <span><i className="dot-eth" /> Ethiopian</span>
         <span><i className="dot-bra" /> Brazilian</span>
-        <span className="muted">Only drip batches have beans; reset batches are excluded.</span>
+        <span><i className="dot-esp" /> Espresso shots</span>
+        <span className="muted">Drip is split by bean; espresso shows shots thrown while calibrating. Reset batches are excluded.</span>
         {filterNote && <span className="status-chip" data-warn>Filtered: {filterNote}</span>}
       </div>
 
       {!data ? (
         <div className="skeleton-list">{[0, 1, 2, 3].map((i) => <div className="skeleton" key={i} />)}</div>
       ) : withWaste.length === 0 ? (
-        <p className="empty">No drip was discarded in this period.</p>
+        <p className="empty">Nothing was discarded in this period.</p>
       ) : (
         <div className="waste-table" role="table">
           <div className="waste-tr waste-th" role="row">
             <span>{groupBy === 'store' ? 'Store' : groupBy === 'rom' ? 'ROM' : groupBy === 'city' ? 'City' : 'Area manager'}</span>
             <span className="num">Ethiopian</span>
             <span className="num">Brazilian</span>
-            <span className="num">Total</span>
+            <span className="num">Drip total</span>
+            <span className="num">Shots D1 / D2</span>
             <span className="waste-bar-col" />
           </div>
           {withWaste.map((r, i) => (
@@ -188,6 +206,7 @@ export function WastePanel({ stores, today, filterNote }: { stores: AdminStore[]
               <span className="num" title={`Hot ${L(r.ethHot)} L · Iced ${L(r.ethIced)} L`}>{L(r.eth)} L</span>
               <span className="num" title={`Hot ${L(r.braHot)} L · Iced ${L(r.braIced)} L`}>{L(r.bra)} L</span>
               <span className="num"><b>{L(r.eth + r.bra)} L</b></span>
+              <span className="num" title="Espresso shots thrown: dose 1 / dose 2">{r.w1} / {r.w2}</span>
               <span className="waste-bar-col">
                 <span className="waste-bar" style={{ width: `${((r.eth + r.bra) / max) * 100}%` }}>
                   <span className="seg-eth" style={{ flexGrow: r.eth }} />

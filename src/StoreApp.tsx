@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { toast } from 'sonner';
-import { type Batch, type StoreInfo, slotsFor, DISCARD_QUICK_ML } from '../shared/config';
+import { type Batch, type StoreInfo, slotsFor, DISCARD_QUICK_ML, MAX_THROWN } from '../shared/config';
 import { api, ApiError } from './lib/api';
 import { useI18n, fmt, slotLabel } from './lib/i18n';
 import { useNow, setServerNow, nowMs, clock, dayKey } from './lib/time';
@@ -150,7 +150,7 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
 
   // sheets
   const [staffSheet, setStaffSheet] = useState<null | { then?: (name: string) => void }>(null);
-  const [espressoSheet, setEspressoSheet] = useState<null | { slot: string; d1: number; d2: number }>(null);
+  const [espressoSheet, setEspressoSheet] = useState<null | { slot: string; d1: number; d2: number; w1: number; w2: number }>(null);
   const [discardSheet, setDiscardSheet] = useState<null | { id: string; day: string; label: string }>(null);
   const [resetSheet, setResetSheet] = useState<null | { batch: Batch }>(null);
 
@@ -186,7 +186,7 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
     for (const v of views) {
       const prev = prevPhases.current[v.def.slot];
       if (prev && prev !== v.phase && gated) {
-        if (prev === 'brewing' && v.phase === 'fresh') {
+        if (prev === 'brewing' && v.phase === 'fresh' && v.def.kind === 'drip') {
           chime('ready');
           toast.success(`${slotLabel(t, v.def.slot).group} · ${slotLabel(t, v.def.slot).item} — ${t.readyAt}`);
         }
@@ -212,7 +212,7 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
     else setStaffSheet({ then: fn });
   };
 
-  const startBatch = async (view: SlotView, name: string, doses?: { d1: number; d2: number }) => {
+  const startBatch = async (view: SlotView, name: string, doses?: { d1: number; d2: number; w1?: number; w2?: number }) => {
     const previous = view.current && nowMs() - view.current.t < 12 * 3600 * 1000 ? view.current : undefined;
     setBusySlot(view.def.slot);
     try {
@@ -240,7 +240,7 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
   const onPrimary = (view: SlotView) => {
     if (view.def.kind === 'espresso') {
       const last = store.last_doses[view.def.slot] ?? store.last_doses.espresso_hot ?? store.last_doses.espresso ?? [630, 870];
-      withStaff(() => setEspressoSheet({ slot: view.def.slot, d1: last[0], d2: last[1] }));
+      withStaff(() => setEspressoSheet({ slot: view.def.slot, d1: last[0], d2: last[1], w1: 0, w2: 0 }));
     } else {
       withStaff((name) => void startBatch(view, name));
     }
@@ -419,6 +419,13 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
               <DoseStepper label={t.dose1} value={espressoSheet.d1} onChange={(d1) => setEspressoSheet({ ...espressoSheet, d1 })} />
               <DoseStepper label={t.dose2} value={espressoSheet.d2} onChange={(d2) => setEspressoSheet({ ...espressoSheet, d2 })} />
             </div>
+            <div className="thrown">
+              <div className="thrown-title">{t.thrownTitle}</div>
+              <div className="thrown-row">
+                <Counter label={t.dose1} value={espressoSheet.w1} onChange={(w1) => setEspressoSheet({ ...espressoSheet, w1 })} />
+                <Counter label={t.dose2} value={espressoSheet.w2} onChange={(w2) => setEspressoSheet({ ...espressoSheet, w2 })} />
+              </div>
+            </div>
             <div className="sheet-who">
               <IconUser /> {staff}
             </div>
@@ -427,7 +434,7 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
               disabled={busySlot === espressoSheet.slot}
               onClick={() => {
                 const v = views.find((x) => x.def.slot === espressoSheet.slot)!;
-                const d = { d1: espressoSheet.d1, d2: espressoSheet.d2 };
+                const d = { d1: espressoSheet.d1, d2: espressoSheet.d2, w1: espressoSheet.w1, w2: espressoSheet.w2 };
                 setEspressoSheet(null);
                 void startBatch(v, staff, d);
               }}
@@ -482,6 +489,23 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
         )}
       </Sheet>
 
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- thrown shots counter
+
+function Counter({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
+  return (
+    <div className="counter" data-active={value > 0 || undefined}>
+      <span className="counter-label">{label}</span>
+      <button type="button" className="counter-btn" onClick={() => onChange(Math.max(0, value - 1))} disabled={value === 0} aria-label={`${label} −`}>
+        <IconMinus />
+      </button>
+      <span className="counter-value num">{value}</span>
+      <button type="button" className="counter-btn" onClick={() => onChange(Math.min(MAX_THROWN, value + 1))} aria-label={`${label} +`}>
+        <IconPlus />
+      </button>
     </div>
   );
 }

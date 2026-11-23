@@ -58,6 +58,12 @@ export function stepDose(v: number, part: 'major' | 'minor', dir: 1 | -1): numbe
 }
 // note: 695 + 5 = 700 → "7:00" and 700 - 5 = 695 → "6:95" because minor is always a multiple of 5 below 100.
 
+/** Espresso shots thrown while calibrating (per dose). */
+export const MAX_THROWN = 50;
+export function isValidThrown(v: unknown): v is number {
+  return typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= MAX_THROWN;
+}
+
 /** Discard amount stored in millilitres. Quick picks are ¼, ½, ¾ L; "Other" steps by 0.25 L. */
 export const DISCARD_QUICK_ML = [250, 500, 750];
 export function isValidDiscard(v: unknown): v is number {
@@ -74,6 +80,8 @@ export interface Batch {
   n: string; // staff name
   d1?: number; // espresso dose 1
   d2?: number; // espresso dose 2
+  w1?: number; // espresso: dose 1 shots thrown during calibration
+  w2?: number; // espresso: dose 2 shots thrown during calibration
   dl?: number; // ml discarded from the previous batch of this slot
   v?: number; // voided at
   m?: number; // distance from store (m) when logged

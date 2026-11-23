@@ -18,7 +18,7 @@ export function slotView(def: SlotDef, batches: Batch[], now: number): SlotView 
   const current = live[0];
   const previous = live[1];
   if (!current || now - current.x > STALE_MS) return { def, phase: 'none', remaining: 0, progress: 0, previous: current };
-  if (now < current.r) {
+  if (def.kind === 'drip' && now < current.r) {
     return { def, current, previous, phase: 'brewing', remaining: current.r - now, progress: (now - current.t) / Math.max(1, current.r - current.t) };
   }
   const left = current.x - now;
