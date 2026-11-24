@@ -3961,9 +3961,14 @@ button.batch-tr:hover {
     .logview {
       height: 100%;
       align-items: stretch;
+      /* one row exactly as tall as the screen, so each column scrolls instead of growing */
+      grid-template-rows: minmax(0, 1fr);
     }
     .log-side,
     .log-main {
+      min-height: 0;
+      max-height: 100%;
+      align-self: stretch;
       overflow-y: auto;
       overscroll-behavior: contain;
       padding: 2px 4px 20px;
