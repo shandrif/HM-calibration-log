@@ -36,6 +36,8 @@ export interface Env {
   ADMIN_PASSWORD: string;
   VAPID_PRIVATE_JWK?: string;
   ANALYTICS_TOKEN?: string;
+  /** Testing only: comma-separated store codes whose hot drip expires 4 min after brewing. */
+  FAST_HOT_DRIP_STORES?: string;
 }
 
 type StoreRow = {
@@ -201,7 +203,8 @@ app.post('/api/batches', requireStore, async (c) => {
 
   const now = Date.now();
   const ready = now + def.brewMs;
-  const batch: Batch = { id: randomId(), s: def.slot, t: now, r: ready, x: ready + def.lifeMs, n: staff };
+  const fast = def.station === 'hot_drip' && (c.env.FAST_HOT_DRIP_STORES ?? '').split(',').map((x) => x.trim().toUpperCase()).includes(store.code.toUpperCase());
+  const batch: Batch = { id: randomId(), s: def.slot, t: now, r: ready, x: ready + (fast ? 4 * 60 * 1000 : def.lifeMs), n: staff };
   if (def.kind === 'espresso') {
     batch.d1 = body.d1;
     batch.d2 = body.d2;
