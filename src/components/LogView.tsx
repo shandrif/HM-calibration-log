@@ -109,6 +109,7 @@ export function LogView({
   const thrownG = live.reduce((a, b) => a + (b.wg ?? thrownTenths(b.w1, b.w2)), 0);
 
   return (
+    <div className="log-cq">
     <div className="logview">
       <div className="log-side">
       <div className="daynav">
@@ -191,6 +192,7 @@ export function LogView({
         )}
         <p className="footnote">{t.storeTime}</p>
       </div>
+    </div>
     </div>
   );
 }

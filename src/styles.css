@@ -3953,30 +3953,24 @@ button.batch-tr:hover {
   .tile-caption {
     font-size: 16px;
   }
-  /* log: two columns, each scrolls on its own */
-  .main > div:has(> .logview) {
+  /* log (store board): fill the height; when there is room for two columns each scrolls on its own */
+  .main > div:has(> .log-cq) {
     overflow: hidden;
   }
-  .logview {
-    max-width: none;
-    width: 100%;
+  .main > div > .log-cq {
     height: 100%;
-    display: grid;
-    grid-template-columns: minmax(360px, 420px) minmax(0, 1fr);
-    gap: 20px;
-    margin: 0;
   }
-  .log-side,
-  .log-main {
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    padding: 2px 4px 20px;
-  }
-  .log-side .summary {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-  .log-main .footnote {
-    margin-top: auto;
+  @container log (min-width: 900px) {
+    .logview {
+      height: 100%;
+      align-items: stretch;
+    }
+    .log-side,
+    .log-main {
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      padding: 2px 4px 20px;
+    }
   }
   /* more: two columns */
   .more {
@@ -4077,5 +4071,40 @@ button.batch-tr:hover {
     scrollbar-width: thin;
     scrollbar-color: rgba(70, 50, 30, 0.25) transparent;
     overscroll-behavior: contain;
+  }
+}
+
+/* ---------- Log: two columns whenever the Log itself is wide enough (board, admin panel, any window) ---------- */
+.log-cq {
+  container: log / inline-size;
+  width: 100%;
+}
+@container log (min-width: 900px) {
+  .logview {
+    max-width: none;
+    width: 100%;
+    margin: 0;
+    display: grid;
+    grid-template-columns: minmax(340px, 400px) minmax(0, 1fr);
+    gap: 20px;
+    align-items: start;
+  }
+  .log-side .summary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .log-main .footnote {
+    margin-top: auto;
+  }
+}
+/* admin "Logs & PDF" panel: use the width of the screen */
+@media (min-width: 700px) {
+  .sheet:has(.log-cq) {
+    max-width: min(1180px, calc(100vw - 40px));
+  }
+}
+@container log (min-width: 900px) {
+  .log-side .summary-label {
+    white-space: normal;
+    line-height: 1.25;
   }
 }
