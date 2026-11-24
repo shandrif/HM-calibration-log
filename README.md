@@ -48,6 +48,14 @@ All waste is reported as coffee weight (g / kg). Staff still choose litres for t
 
 `/admin` → **Bean waste**: litres of Ethiopian and Brazilian drip discarded (hot/iced split) for today, 7, 30 or 92 days, grouped by store, area manager, ROM or city, with CSV export. Finished days come from a nightly summary (one row per day), so the report stays cheap on the free tier.
 
+## iPad layout
+
+- **Landscape** (iPad Air / Pro / mini): navigation rail on the side, one-line header with a large clock, compact bean labels, and the three stations as columns whose tiles fill the screen with large countdowns. No scrolling; the board is readable from across the bar.
+- **Portrait**: the board fits the screen exactly with larger numbers.
+- Sheets float as centred panels; the espresso sheet is two columns in landscape so Save is always visible.
+- Log: summary on the left, last calibration and the full log on the right. More: two columns.
+- Phones keep the original layout.
+
 ## Free-tier design
 
 - One database row per store per day holds all its batches, so a log is **1 row written** and the nightly clean-up deletes **1 row per store per day**.

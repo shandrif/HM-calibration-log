@@ -110,6 +110,7 @@ export function LogView({
 
   return (
     <div className="logview">
+      <div className="log-side">
       <div className="daynav">
         <button className="icon-btn" onClick={() => setDay(addDays(day, -1))} disabled={day <= oldest} aria-label={t.prevDay}>
           <IconChevron dir={lang === 'ar' ? 'right' : 'left'} />
@@ -174,23 +175,22 @@ export function LogView({
         </button>
       </div>
 
-      {!batches ? (
-        <div className="skeleton-list">
-          {[0, 1, 2, 3].map((i) => (
-            <div className="skeleton" key={i} />
-          ))}
-        </div>
-      ) : (
-        <>
-          <LastCalibrations store={store} batches={sorted} day={day} isToday={day === today} now={now} />
-          {sorted.length === 0 ? (
-            <p className="empty">{t.noEntries}</p>
-          ) : (
-            <LogSections batches={sorted} now={now} />
-          )}
-        </>
-      )}
-      <p className="footnote">{t.storeTime}</p>
+      </div>
+      <div className="log-main">
+        {batches && <LastCalibrations store={store} batches={sorted} day={day} isToday={day === today} now={now} />}
+        {!batches ? (
+          <div className="skeleton-list">
+            {[0, 1, 2, 3].map((i) => (
+              <div className="skeleton" key={i} />
+            ))}
+          </div>
+        ) : sorted.length === 0 ? (
+          <p className="empty">{t.noEntries}</p>
+        ) : (
+          <LogSections batches={sorted} now={now} />
+        )}
+        <p className="footnote">{t.storeTime}</p>
+      </div>
     </div>
   );
 }

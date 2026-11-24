@@ -3650,3 +3650,419 @@ button.batch-tr:hover {
   color: var(--tan-deep);
   letter-spacing: 0;
 }
+
+/* =====================================================================================
+   iPAD / TABLET LAYOUT
+   Landscape: navigation rail on the left, one-line header with a big clock, compact bean
+   labels, three station columns whose tiles fill the screen (no scrolling), large numbers.
+   Portrait: board fills the screen exactly, larger numbers.
+   Sheets float as centred panels; the espresso sheet goes two-column in landscape.
+   ===================================================================================== */
+
+.topbar-clock {
+  display: none;
+}
+.log-side,
+.log-main,
+.esp-side {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.tile,
+.bag,
+.chip,
+.tab {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.tile-ring svg {
+  display: block;
+}
+
+/* ---------- floating sheets on any tablet ---------- */
+@media (min-width: 700px) {
+  .sheet {
+    bottom: max(20px, env(safe-area-inset-bottom));
+    max-width: 640px;
+    max-height: calc(100dvh - 40px);
+    padding-bottom: 22px;
+    border-radius: 30px;
+    overflow-y: auto;
+  }
+  .sheet-title {
+    font-size: 22px;
+  }
+  .chip-lg {
+    height: 58px;
+    font-size: 17px;
+  }
+}
+
+/* ---------- shared: full-height board, no page scroll ---------- */
+@media (min-width: 700px) and (min-height: 600px) {
+  .app {
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .main {
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+  .main > div {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .board {
+    flex: 1;
+    min-height: 0;
+  }
+  .station {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .tiles {
+    flex: 1;
+    min-height: 0;
+    grid-auto-rows: minmax(0, 1fr);
+  }
+  .tile {
+    padding: 16px 18px;
+  }
+  .tile-body {
+    flex: 1;
+    min-height: 0;
+  }
+  .tile-name {
+    font-size: 19px;
+  }
+  .tile-caption {
+    font-size: 15px;
+  }
+  .tile-meta {
+    font-size: 14px;
+  }
+  .tile-cta {
+    min-height: 58px;
+    font-size: 18px;
+    border-radius: 16px;
+  }
+  .log-group-head {
+    top: 0;
+  }
+}
+
+/* ---------- portrait iPad ---------- */
+@media (min-width: 700px) and (orientation: portrait) and (min-height: 900px) {
+  .app {
+    padding-bottom: calc(var(--tabbar-h) + 28px + env(safe-area-inset-bottom));
+  }
+  .main {
+    padding-top: 14px;
+  }
+  .board {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .station {
+    flex: 1;
+  }
+  .station-head {
+    margin-bottom: 8px;
+  }
+  .tile-big {
+    font-size: 44px;
+  }
+  .tile-ring svg {
+    width: 72px;
+    height: 72px;
+  }
+  .bag-row {
+    margin-bottom: 16px;
+  }
+  .logview {
+    max-width: 760px;
+    width: 100%;
+  }
+}
+
+/* ---------- landscape iPad (and desktop) ---------- */
+@media (min-width: 1000px) and (orientation: landscape) and (min-height: 600px) {
+  :root {
+    --rail-w: 92px;
+  }
+  .app {
+    padding-bottom: 0;
+    padding-inline-start: calc(var(--rail-w) + 20px + env(safe-area-inset-left));
+  }
+  /* navigation rail */
+  .tabbar {
+    left: calc(14px + env(safe-area-inset-left));
+    right: auto;
+    top: 50%;
+    bottom: auto;
+    transform: translateY(-50%);
+    width: var(--rail-w);
+    height: auto;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px;
+    border-radius: 30px;
+  }
+  [dir='rtl'] .tabbar {
+    left: auto;
+    right: calc(14px + env(safe-area-inset-right));
+  }
+  .tab {
+    flex: none;
+    height: 76px;
+    border-radius: 22px;
+    font-size: 13px;
+    gap: 4px;
+  }
+  .tab svg {
+    width: 24px;
+    height: 24px;
+  }
+  /* one-line header */
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 12px 24px;
+    margin-inline-start: calc(-1 * (var(--rail-w) + 20px));
+    padding-inline-start: calc(var(--rail-w) + 44px);
+  }
+  .topbar-row {
+    display: contents;
+  }
+  .topbar-title {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 280px;
+  }
+  .topbar-store {
+    font-size: 19px;
+  }
+  .staffbar {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    order: 3;
+  }
+  .topbar-clock {
+    display: block;
+    order: 4;
+    font-size: 34px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1;
+  }
+  .topbar .pill {
+    order: 5;
+  }
+  .alarm-bar {
+    top: 74px;
+    width: auto;
+    margin: 12px 24px 0 0;
+    max-width: none;
+  }
+  [dir='rtl'] .alarm-bar {
+    margin: 12px 0 0 24px;
+  }
+  .main {
+    max-width: none;
+    padding: 14px 24px 18px 0;
+  }
+  [dir='rtl'] .main {
+    padding: 14px 0 18px 24px;
+  }
+  /* compact bean labels in one row */
+  .bag-row {
+    max-width: none;
+    margin-bottom: 14px;
+  }
+  .bag {
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px 10px 12px;
+    border-radius: 18px;
+  }
+  .bag-top {
+    flex: 0 0 auto;
+  }
+  .bag-top > svg,
+  .bag-perf {
+    display: none;
+  }
+  .bag-code {
+    font-size: 18px;
+  }
+  .bag-meta {
+    margin-inline-start: auto;
+  }
+  /* board: three columns, tiles stacked and filling the height */
+  .board {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: stretch;
+    gap: 20px;
+  }
+  .tiles,
+  .tiles[data-count='1'] {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+  }
+  .station-head {
+    margin-bottom: 10px;
+  }
+  .station-head h2 {
+    font-size: 22px;
+  }
+  .tile {
+    padding: 18px 22px;
+    border-radius: 28px;
+    gap: 8px;
+  }
+  .tile-body {
+    gap: 20px;
+  }
+  .tile-big {
+    font-size: clamp(40px, 4.2vw, 60px);
+  }
+  .tile-ring svg {
+    width: 88px;
+    height: 88px;
+  }
+  .tile-name {
+    font-size: 20px;
+  }
+  .tile-caption {
+    font-size: 16px;
+  }
+  /* log: two columns, each scrolls on its own */
+  .main > div:has(> .logview) {
+    overflow: hidden;
+  }
+  .logview {
+    max-width: none;
+    width: 100%;
+    height: 100%;
+    display: grid;
+    grid-template-columns: minmax(360px, 420px) minmax(0, 1fr);
+    gap: 20px;
+    margin: 0;
+  }
+  .log-side,
+  .log-main {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 2px 4px 20px;
+  }
+  .log-side .summary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .log-main .footnote {
+    margin-top: auto;
+  }
+  /* more: two columns */
+  .more {
+    max-width: none;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    gap: 18px;
+  }
+  .more > .signout,
+  .more > .footnote {
+    grid-column: 1 / -1;
+    justify-self: center;
+    max-width: 420px;
+    width: 100%;
+  }
+  /* espresso sheet: two columns so Save is always visible */
+  .sheet:has(.esp-grid) {
+    max-width: 920px;
+  }
+  .esp-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 20px;
+    align-items: start;
+  }
+  .esp-grid .dose-row {
+    grid-template-columns: 1fr 1fr;
+  }
+  .esp-grid .dose {
+    padding: 18px 12px;
+  }
+  .esp-grid .dose-value {
+    font-size: 48px;
+  }
+  .esp-side {
+    gap: 14px;
+  }
+}
+
+/* tablet: tiles never shrink below their content (no overlap when the alarm bar shows) */
+@media (min-width: 700px) and (min-height: 600px) {
+  .tiles {
+    grid-auto-rows: minmax(min-content, 1fr);
+  }
+}
+/* portrait iPad: compact bean labels and tiles so three stations fit without scrolling */
+@media (min-width: 700px) and (orientation: portrait) and (min-height: 900px) {
+  .bag {
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 18px;
+  }
+  .bag-top {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+  .bag-top > svg,
+  .bag-perf,
+  .bag-meta {
+    display: none;
+  }
+  .bag-code {
+    font-size: 16px;
+    margin-inline-start: auto;
+  }
+  .bag-row {
+    margin-bottom: 12px;
+  }
+  .board {
+    gap: 12px;
+  }
+  .tile {
+    padding: 13px 16px;
+    gap: 6px;
+  }
+  .tile-ring svg {
+    width: 62px;
+    height: 62px;
+  }
+  .tile-big {
+    font-size: 40px;
+  }
+  .tile-cta {
+    min-height: 52px;
+  }
+}

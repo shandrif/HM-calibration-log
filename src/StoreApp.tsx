@@ -353,6 +353,9 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
               {store.code} · {clock(now)}
             </div>
           </div>
+          <div className="topbar-clock num" aria-hidden>
+            {clock(now)}
+          </div>
           <button className="pill" onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')} aria-label={t.language}>
             {lang === 'ar' ? 'EN' : 'ع'}
           </button>
@@ -490,11 +493,12 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
 
       <Sheet open={!!espressoSheet} onOpenChange={(o) => !o && setEspressoSheet(null)} title={espressoSheet ? `${t.espresso} · ${slotLabel(t, espressoSheet.slot).item}` : ''}>
         {espressoSheet && (
-          <div className="sheet-body">
+          <div className="sheet-body esp-grid">
             <div className="dose-row">
               <DoseStepper label={t.dose1} value={espressoSheet.d1} onChange={(d1) => setEspressoSheet({ ...espressoSheet, d1 })} />
               <DoseStepper label={t.dose2} value={espressoSheet.d2} onChange={(d2) => setEspressoSheet({ ...espressoSheet, d2 })} />
             </div>
+            <div className="esp-side">
             <div className="thrown">
               <div className="thrown-title">
                 <span>{t.thrownTitle}</span>
@@ -545,6 +549,7 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
             >
               {espressoSheet.by ? t.saveStart : t.pickWho}
             </button>
+            </div>
           </div>
         )}
       </Sheet>
