@@ -8,6 +8,7 @@ import { useNow, setServerNow, nowMs, clock, dayKey } from './lib/time';
 import { useGeo, formatDistance } from './lib/geo';
 import { useWakeLock } from './lib/wakelock';
 import { unlockAudio, startAlarm, stopAlarm, chime, onSoundBlocked, resumeAlarmIfNeeded } from './lib/sound';
+import { haptic } from './lib/haptics';
 import { slotView, loadAcks, saveAcks, ls, lsSet, type SlotView } from './lib/board';
 import { Tile } from './components/Tile';
 import { Grams } from './components/Grams';
@@ -20,6 +21,13 @@ import { LogView } from './components/LogView';
 import { MoreView } from './components/MoreView';
 
 type Tab = 'board' | 'log' | 'more';
+const TAB_ORDER: Tab[] = ['board', 'log', 'more'];
+/** Sideways slide in the direction of travel; the old tab leaves fast so the new one feels instant. */
+const TAB_VARIANTS = {
+  enter: (d: number) => ({ opacity: 0, x: d * 40 }),
+  center: { opacity: 1, x: 0, transition: { duration: 0.3, ease: [0.23, 1, 0.32, 1] as [number, number, number, number] } },
+  exit: (d: number) => ({ opacity: 0, x: d * -24, transition: { duration: 0.12, ease: [0.4, 0, 1, 1] as [number, number, number, number] } }),
+};
 
 export function StoreApp() {
   const { t, lang } = useI18n();
@@ -143,6 +151,18 @@ interface ShellProps {
 
 function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab, onAuthError, onSignOut }: ShellProps) {
   const { t, lang, setLang } = useI18n();
+  // tab order decides the slide direction (Board → Log → More)
+  const [tabDir, setTabDir] = useState<1 | -1>(1);
+  const goTab = (k: Tab) => {
+    if (k === tab) {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      document.querySelector('.main > div')?.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    setTabDir(TAB_ORDER.indexOf(k) > TAB_ORDER.indexOf(tab) ? 1 : -1);
+    haptic(8);
+    setTab(k);
+  };
   const now = useNow();
   const geo = useGeo(gated && store.geofence);
   const awake = useWakeLock(gated);
@@ -214,6 +234,7 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
   }, [alarming.length]);
 
   const ackAll = () => {
+    haptic(20);
     const next = new Set(acks);
     alarming.forEach((v) => v.current && next.add(v.current.id));
     setAcks(next);
@@ -262,6 +283,7 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
       const res = await api.start({ slot: view.def.slot, staff: name, ...doses, fix: geo.fix.current });
       setServerNow(res.now);
       setBatches((b) => [...b, res.batch]);
+      haptic(15);
       if (doses) setStore({ ...store, last_doses: { ...store.last_doses, [view.def.slot]: [doses.d1, doses.d2] } });
       if (previous) {
         const acked = new Set(acks);
@@ -395,13 +417,14 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
       </AnimatePresence>
 
       <main className="main">
-        <AnimatePresence mode="wait" initial={false}>
+        <AnimatePresence mode="wait" initial={false} custom={tabDir * (lang === 'ar' ? -1 : 1)} onExitComplete={() => window.scrollTo(0, 0)}>
           <motion.div
             key={tab}
-            initial={{ opacity: 0, y: 6, filter: 'blur(2px)' }}
-            animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-            exit={{ opacity: 0, y: -4, filter: 'blur(2px)' }}
-            transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
+            custom={tabDir * (lang === 'ar' ? -1 : 1)}
+            variants={TAB_VARIANTS}
+            initial="enter"
+            animate="center"
+            exit="exit"
           >
             {tab === 'board' && (
               <>
@@ -465,7 +488,7 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
             ['more', t.more, <IconMore key="m" />],
           ] as const
         ).map(([k, label, icon]) => (
-          <button key={k} className="tab" data-active={tab === k || undefined} onClick={() => setTab(k)} aria-current={tab === k ? 'page' : undefined}>
+          <button key={k} className="tab" data-active={tab === k || undefined} onClick={() => goTab(k)} aria-current={tab === k ? 'page' : undefined}>
             {icon}
             <span>{label}</span>
             {tab === k && <motion.span layoutId="tab-dot" className="tab-dot" transition={{ type: 'spring', duration: 0.35, bounce: 0.15 }} />}

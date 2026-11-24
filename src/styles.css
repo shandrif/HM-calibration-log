@@ -4108,3 +4108,16 @@ button.batch-tr:hover {
     line-height: 1.25;
   }
 }
+
+/* tab bar: the active icon lifts a little */
+.tab svg {
+  transition: transform 260ms var(--ease-out);
+}
+.tab[data-active] svg {
+  transform: translateY(-1px) scale(1.08);
+}
+@media (prefers-reduced-motion: reduce) {
+  .tab[data-active] svg {
+    transform: none;
+  }
+}

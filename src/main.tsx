@@ -7,6 +7,9 @@ import '@fontsource/ibm-plex-sans-arabic/700.css';
 import './styles.css';
 import { App } from './App';
 
+// iOS Safari only shows :active (pressed) styles when the page listens for touches.
+document.addEventListener('touchstart', () => {}, { passive: true });
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />
