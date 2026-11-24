@@ -4066,3 +4066,16 @@ button.batch-tr:hover {
     min-height: 52px;
   }
 }
+
+/* Floating sheets: the drawer library adds a 200%-tall block under the sheet to cover drag
+   overscroll. Inside a scrollable floating panel it became empty scroll space, so hide it. */
+@media (min-width: 700px) {
+  .sheet[data-vaul-drawer]::after {
+    display: none !important;
+  }
+  .sheet {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(70, 50, 30, 0.25) transparent;
+    overscroll-behavior: contain;
+  }
+}
