@@ -9,7 +9,7 @@ import { getFix } from '../lib/geo';
 import { setServerNow, shortDuration } from '../lib/time';
 import type { StoreInfo } from '../../shared/config';
 import { WastePanel } from './Waste';
-import { formatGrams, dripTenths } from '../../shared/config';
+import { formatGrams, dripTenths, tanksFor, DEFAULT_TANKS, MAX_TANKS } from '../../shared/config';
 import { BatchesPanel } from './Batches';
 
 // Head-office screen. English only (internal tool).
@@ -281,6 +281,7 @@ function toInfo(s: AdminStore): StoreInfo {
     last_doses: {},
     geofence: s.lat != null,
     beans: {},
+    tanks: (() => { try { return JSON.parse(s.tanks || '{}'); } catch { return {}; } })(),
   };
 }
 
@@ -405,11 +406,23 @@ function parseLocation(input: string): { lat: number; lng: number } | null {
   return Math.abs(lat) <= 90 && Math.abs(lng) <= 180 ? { lat, lng } : null;
 }
 
+const DRIP_SLOTS = ['hot_drip:ethiopian', 'hot_drip:brazilian', 'iced_drip:ethiopian', 'iced_drip:brazilian'];
+
 function StoreEditor({ value, onClose, onSaved }: { value: Partial<AdminStore> | null; onClose: () => void; onSaved: () => void }) {
   const [f, setF] = useState<Partial<AdminStore> & { pin?: string; loc?: string }>({});
   const [busy, setBusy] = useState(false);
+  const [tanks, setTanks] = useState<Record<string, number>>({});
   useEffect(() => {
     if (value) setF({ ...value, pin: '', loc: value.lat != null ? `${value.lat}, ${value.lng}` : '' });
+    if (value) {
+      let saved: Record<string, number> = {};
+      try {
+        saved = JSON.parse(value.tanks || '{}');
+      } catch {
+        /* keep defaults */
+      }
+      setTanks(Object.fromEntries(DRIP_SLOTS.map((k) => [k, tanksFor(saved, k)])));
+    }
   }, [value]);
   const creating = !value?.id;
   const set = (k: string, v: unknown) => setF((x) => ({ ...x, [k]: v }));
@@ -426,6 +439,7 @@ function StoreEditor({ value, onClose, onSaved }: { value: Partial<AdminStore> |
       lng: loc?.lng ?? null,
       radius_m: Number(f.radius_m) || 500,
       espresso_mode: f.espresso_mode,
+      tanks,
       active: !!f.active,
       ...(value?.source === 'master' ? {} : { city: f.city ?? '', area_manager: f.area_manager ?? '', rom: f.rom ?? '' }),
       ...(f.pin ? { pin: f.pin } : {}),
@@ -445,6 +459,7 @@ function StoreEditor({ value, onClose, onSaved }: { value: Partial<AdminStore> |
           bad_name: 'Name is required.',
           code_taken: 'That store code already exists.',
           bad_radius: 'Radius: 50–5000 m.',
+          bad_tanks: `Drip tanks: 1–${MAX_TANKS} each.`,
         }[code] ?? 'Could not save.',
       );
     } finally {
@@ -516,6 +531,31 @@ function StoreEditor({ value, onClose, onSaved }: { value: Partial<AdminStore> |
             <button type="button" data-active={f.espresso_mode === 'single' || undefined} onClick={() => set('espresso_mode', 'single')}>
               One for both
             </button>
+          </div>
+        </div>
+        <div className="field field-wide">
+          <span>Drip tanks — how many tanks each drip coffee can be brewed into at the same time</span>
+          <div className="tank-settings">
+            {DRIP_SLOTS.map((k) => {
+              const n = tanks[k] ?? DEFAULT_TANKS;
+              const [station, bean] = k.split(':');
+              return (
+                <div className="tank-setting" key={k}>
+                  <span>
+                    {station === 'hot_drip' ? 'Hot' : 'Iced'} · {bean === 'ethiopian' ? 'Ethiopian' : 'Brazilian'}
+                  </span>
+                  <div className="tank-stepper">
+                    <button type="button" className="counter-btn" aria-label="Fewer tanks" disabled={n <= 1} onClick={() => setTanks((x) => ({ ...x, [k]: n - 1 }))}>
+                      −
+                    </button>
+                    <b className="num">{n}</b>
+                    <button type="button" className="counter-btn" aria-label="More tanks" disabled={n >= MAX_TANKS} onClick={() => setTanks((x) => ({ ...x, [k]: n + 1 }))}>
+                      +
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
         <label className="field field-check">

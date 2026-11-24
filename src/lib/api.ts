@@ -33,7 +33,7 @@ export const api = {
   login: (code: string, pin: string, fix: Fix) => req<{ ok: true }>('POST', '/api/login', { code, pin, fix }),
   logout: () => req('POST', '/api/logout'),
   state: () => req<StateResponse>('GET', '/api/state'),
-  start: (body: { slot: string; staff: string; d1?: number; d2?: number; w1?: number; w2?: number; fix: Fix }) =>
+  start: (body: { slot: string; staff: string; d1?: number; d2?: number; w1?: number; w2?: number; k?: number; fix: Fix }) =>
     req<{ now: number; day: string; batch: Batch }>('POST', '/api/batches', body),
   void: (id: string, day: string) => req('POST', `/api/batches/${id}/void`, { day }),
   discard: (id: string, day: string, ml: number) => req('POST', `/api/batches/${id}/discard`, { day, ml }),
@@ -50,8 +50,8 @@ export const adminApi = {
   login: (password: string) => req('POST', '/api/admin/login', { password }),
   logout: () => req('POST', '/api/admin/logout'),
   overview: () => req<AdminOverview>('GET', '/api/admin/overview'),
-  createStore: (s: Partial<AdminStore> & { pin: string }) => req<{ id: number }>('POST', '/api/admin/stores', s),
-  updateStore: (id: number, s: Partial<AdminStore> & { pin?: string }) => req('PUT', `/api/admin/stores/${id}`, s),
+  createStore: (s: StoreBody & { pin: string }) => req<{ id: number }>('POST', '/api/admin/stores', s),
+  updateStore: (id: number, s: StoreBody & { pin?: string }) => req('PUT', `/api/admin/stores/${id}`, s),
   log: (store: number, day: string) => req<{ day: string; store: StoreInfo; batches: Batch[] }>('GET', `/api/admin/log?store=${store}&day=${day}`),
   logDays: (store: number) => req<{ days: Record<string, number> }>('GET', `/api/admin/log/days?store=${store}`),
   refreshUsage: () => req('POST', '/api/admin/usage/refresh'),
@@ -85,6 +85,8 @@ export interface WasteResponse {
   totals: Record<string, Record<string, number[]>>; // storeId -> slot -> [ml, discards, batches, dose1 thrown, dose2 thrown, thrown 0.1 g]
 }
 
+type StoreBody = Omit<Partial<AdminStore>, 'tanks'> & { tanks?: Record<string, number> };
+
 export interface AdminStore {
   id: number;
   code: string;
@@ -109,6 +111,7 @@ export interface AdminStore {
   source: 'manual' | 'master';
   synced_at: number;
   has_pin: number;
+  tanks: string;
 }
 export interface AdminOverview {
   now: number;

@@ -108,6 +108,7 @@ export interface Batch {
   w2?: number; // espresso: dose 2 shots thrown during calibration
   wg?: number; // espresso: coffee thrown, tenths of a gram (w1 × 18.8 g + w2 × 25.8 g at the time of logging)
   bn?: string; // bean batch (lot) number in use when this was logged
+  k?: number; // drip tank number (1, 2, 3…); missing = tank 1
   dl?: number; // ml discarded from the previous batch of this slot
   v?: number; // voided at
   m?: number; // distance from store (m) when logged
@@ -143,6 +144,16 @@ export interface StoreInfo {
   last_doses: Record<string, [number, number]>;
   geofence: boolean;
   beans: Partial<Record<BeanKey, BeanBatch>>;
+  tanks: Record<string, number>; // drip slot → number of tanks (missing = DEFAULT_TANKS)
+}
+
+/** Drip tanks per item when a store has no setting yet (most stores run two). */
+export const DEFAULT_TANKS = 2;
+export const MAX_TANKS = 6;
+export function tanksFor(tanks: Record<string, number> | undefined, slot: string): number {
+  if (!slot.includes('_drip')) return 1;
+  const n = tanks?.[slot];
+  return Number.isInteger(n) && n! >= 1 ? Math.min(MAX_TANKS, n!) : DEFAULT_TANKS;
 }
 
 export interface StateResponse {

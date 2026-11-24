@@ -40,6 +40,14 @@ Each store keeps the current batch (lot) number for **Espresso**, **Ethiopian** 
 
 `/admin` → **Batches**: results per batch for 7 / 30 / 92 days — stores, calibrations, drip litres discarded (and per batch brewed), espresso grams thrown (and per calibration), average and range of grinder settings, first/last day used; tap a batch for the per-store breakdown; CSV export. A nightly summary (`batch_daily`, one row per day) keeps it cheap.
 
+## Drip tanks
+
+Each drip coffee (hot/iced × Ethiopian/Brazilian) can run in more than one tank at once — 2 by default, 1–6 per store
+(admin → edit store → *Drip tanks*). Every tank has its own timer, expiry alarm and push alert.
+**New batch** fills an empty tank automatically; when every tank holds coffee, staff pick which tank they are replacing
+and log what was left in it. The log, *Last calibration* and the PDF show the tank. Batches store the tank as `k`
+(missing = tank 1). Espresso has no tanks.
+
 ## Waste in coffee weight
 
 All waste is reported as coffee weight (g / kg). Staff still choose litres for thrown drip; it is converted at **1 L = 70 g** (`DRIP_G_PER_L` in `shared/config.ts`). Espresso shots: dose 1 = 18.8 g, dose 2 = 25.8 g.

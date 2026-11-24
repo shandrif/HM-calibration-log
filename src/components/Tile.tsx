@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { formatDose, UNDO_MS } from '../../shared/config';
-import type { SlotView } from '../lib/board';
+import type { SlotView, TankView } from '../lib/board';
 import { useI18n, slotLabel } from '../lib/i18n';
 import { clock, countdown } from '../lib/time';
 import { Ring } from './Ring';
@@ -10,21 +10,24 @@ interface Props {
   view: SlotView;
   now: number;
   alarming: boolean;
+  multiTank?: boolean;
   busy: boolean;
   onPrimary: () => void;
   onUndo: () => void;
   onMenu: () => void;
 }
 
-export const Tile = memo(function Tile({ view, now, alarming, busy, onPrimary, onUndo, onMenu }: Props) {
+export const Tile = memo(function Tile({ view, now, alarming, multiTank, busy, onPrimary, onUndo, onMenu }: Props) {
   const { t } = useI18n();
-  const { def, current, phase } = view;
+  const { def, current, phase, latest } = view;
   const { item } = slotLabel(t, def.slot);
   const isEspresso = def.kind === 'espresso';
 
-  const undoLeft = current ? UNDO_MS - (now - current.t) : 0;
-  const canUndo = !!current && undoLeft > 0 && phase !== 'expired';
-  const canReset = !!current && !canUndo && phase !== 'expired' && phase !== 'none';
+  // undo always targets the batch logged last (whichever tank it went into)
+  const undoLeft = latest ? UNDO_MS - (now - latest.t) : 0;
+  const canUndo = !!latest && undoLeft > 0 && now < latest.x;
+  const live = (tk: TankView) => !!tk.current && tk.phase !== 'expired' && tk.phase !== 'none';
+  const canReset = !canUndo && view.tanks.some(live);
 
   let big = '—';
   let caption = t.notStarted;
@@ -39,7 +42,7 @@ export const Tile = memo(function Tile({ view, now, alarming, busy, onPrimary, o
     caption = t.expired;
   }
 
-  const cta = isEspresso ? (current ? t.recalibrate : t.calibrate) : current ? t.newBatch : t.start;
+  const cta = isEspresso ? (current ? t.recalibrate : t.calibrate) : view.tanks.some((tk) => tk.current) ? t.newBatch : t.start;
 
   return (
     <article className="tile" data-phase={phase} data-alarm={alarming || undefined} aria-live="off">
@@ -71,6 +74,25 @@ export const Tile = memo(function Tile({ view, now, alarming, busy, onPrimary, o
           <div className="tile-caption">{caption}</div>
         </div>
       </div>
+
+      {multiTank && (
+        <ul className="tile-tanks">
+          {view.tanks.map((tk) => (
+            <li key={tk.tank} data-phase={tk.phase} data-alarm={(tk.phase === 'expired' && alarming) || undefined}>
+              <span className="tank-name">
+                {t.tank} {tk.tank}
+              </span>
+              <span className="tank-state num">
+                {tk.phase === 'none'
+                  ? t.tankEmpty
+                  : tk.phase === 'expired'
+                    ? '+' + countdown(-tk.remaining)
+                    : countdown(tk.remaining)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
 
       <div className="tile-meta">
         {current && phase !== 'none' ? (

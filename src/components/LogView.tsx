@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
-import { type Batch, type StoreInfo, formatDose, thrownTenths, slotsFor, dripTenths } from '../../shared/config';
+import { type Batch, type StoreInfo, formatDose, thrownTenths, slotsFor, dripTenths, tanksFor } from '../../shared/config';
 import { Grams } from './Grams';
 import { useI18n, slotLabel, type Strings } from '../lib/i18n';
 import { addDays, clock, dayKey, formatDay, nowMs } from '../lib/time';
-import { batchOutcome, discardByBean, slotView } from '../lib/board';
+import { batchOutcome, discardByBean, slotView, tankOf } from '../lib/board';
 import { buildPdf, canShareFile, downloadFile } from '../lib/pdf';
 import { IconChevron, IconDownload, IconShare, IconDrop, IconCalendar } from './Icons';
 import { CalendarSheet } from './CalendarSheet';
@@ -188,7 +188,7 @@ export function LogView({
         ) : sorted.length === 0 ? (
           <p className="empty">{t.noEntries}</p>
         ) : (
-          <LogSections batches={sorted} now={now} />
+          <LogSections batches={sorted} now={now} tanks={store.tanks} />
         )}
         <p className="footnote">{t.storeTime}</p>
       </div>
@@ -223,16 +223,23 @@ function LastCalibrations({ store, batches, day, isToday, now }: { store: StoreI
           <span>{t.batch}</span>
           <span>{t.status}</span>
         </div>
-        {slots.map((def) => {
+        {slots.flatMap((def) => {
+          const n = tanksFor(store.tanks, def.slot);
+          return Array.from({ length: n }, (_, i) => ({ def, tank: i + 1, n }));
+        }).map(({ def, tank, n }) => {
           const l = slotLabel(t, def.slot);
-          const last = batches.find((b) => b.s === def.slot && !b.v); // batches are newest first
+          const key = `${def.slot}#${tank}`;
+          const tankLabel = n > 1 ? <span className="tank-sub num">{t.tank} {tank}</span> : null;
+          // batches are newest first
+          const last = batches.find((b) => b.s === def.slot && !b.v && (def.kind !== 'drip' || tankOf(b) === tank));
           if (!last)
             return (
-              <div className="last-row" role="row" key={def.slot} data-empty>
+              <div className="last-row" role="row" key={key} data-empty>
                 <span className="last-item">
                   <i className={`st-dot st-${STATION_OF(def.slot)}`} />
                   <span className="last-label">
                     <b>{l.group}</b> · {l.item}
+                    {tankLabel}
                   </span>
                 </span>
                 <span className="last-none">{isToday ? t.notYetToday : t.noneThatDay}</span>
@@ -240,18 +247,20 @@ function LastCalibrations({ store, batches, day, isToday, now }: { store: StoreI
             );
           let status: { key: string; label: string };
           if (isToday) {
-            const v = slotView(def, batches, now);
+            const sv = slotView(def, batches, now, n);
+            const v = sv.tanks.find((x) => x.tank === tank) ?? sv;
             status = { key: v.phase, label: v.phase === 'brewing' ? t.brewing : v.phase === 'soon' ? t.soon : v.phase === 'expired' ? t.expired : v.phase === 'none' ? '—' : t.freshStatus };
           } else {
             const o = batchOutcome(last, batches, now);
             status = { key: o === 'expired' ? 'expired' : 'done', label: o === 'expired' ? t.expired : t.done };
           }
           return (
-            <div className="last-row" role="row" key={def.slot}>
+            <div className="last-row" role="row" key={key}>
               <span className="last-item">
                 <i className={`st-dot st-${STATION_OF(def.slot)}`} />
                 <span className="last-label">
                   <b>{l.group}</b> · {l.item}
+                  {tankLabel}
                 </span>
               </span>
               <span className="num last-time">{clock(last.t)}</span>
@@ -275,12 +284,15 @@ function LastCalibrations({ store, batches, day, isToday, now }: { store: StoreI
 
 type StationKey = 'espresso' | 'hot_drip' | 'iced_drip';
 
-function LogSections({ batches, now }: { batches: Batch[]; now: number }) {
+const showTank = (tanks: StoreInfo['tanks'], b: Batch) => b.s.includes('_drip') && (tanksFor(tanks, b.s) > 1 || tankOf(b) > 1);
+
+function LogSections({ batches, now, tanks }: { batches: Batch[]; now: number; tanks: StoreInfo['tanks'] }) {
   const { t, lang } = useI18n();
   const [filter, setFilter] = useState<'all' | StationKey>('all');
   const latestIds = new Set<string>();
   const seen = new Set<string>();
-  for (const b of batches) if (!b.v && !seen.has(b.s)) (seen.add(b.s), latestIds.add(b.id));
+  // the newest batch of every item *and tank* is the one still being served
+  for (const b of batches) if (!b.v && !seen.has(b.s + '#' + tankOf(b))) (seen.add(b.s + '#' + tankOf(b)), latestIds.add(b.id));
   const groups: StationKey[] = ['espresso', 'hot_drip', 'iced_drip'];
   return (
     <div className="log-sections">
@@ -332,7 +344,10 @@ function LogSections({ batches, now }: { batches: Batch[]; now: number }) {
                       transition={{ duration: 0.25, delay: Math.min(i, 6) * 0.02, ease: [0.23, 1, 0.32, 1] }}
                     >
                       <span className="c-t num">{clock(b.t)}</span>
-                      <span className="c-i">{l.item}</span>
+                      <span className="c-i">
+                        <span className="c-i-name">{l.item}</span>
+                        {showTank(tanks, b) && <span className="tank-sub num">{t.tank} {tankOf(b)}</span>}
+                      </span>
                       <span className="c-b">{b.n}</span>
                       <span className="c-n num" dir="ltr">{b.bn ? `#${b.bn}` : '—'}</span>
                       <span className="c-d num">

@@ -12,6 +12,8 @@ import {
   thrownTenths,
   beanOf,
   normalizeBatch,
+  tanksFor,
+  MAX_TANKS,
   BEAN_KEYS,
   type BeanKey,
   type BeanBatch,
@@ -51,6 +53,7 @@ type StoreRow = {
   staff: string;
   last_doses: string;
   beans: string;
+  tanks: string;
   active: number;
   fail_count: number;
   locked_until: number;
@@ -80,6 +83,7 @@ function storeInfo(s: StoreRow): StoreInfo {
     last_doses: safeJson(s.last_doses, {}),
     geofence: s.lat != null && s.lng != null,
     beans: safeJson(s.beans, {}),
+    tanks: safeJson(s.tanks, {}),
   };
 }
 
@@ -178,7 +182,7 @@ app.get('/api/state', requireStore, async (c) => {
 /** Start a batch: one row written. */
 app.post('/api/batches', requireStore, async (c) => {
   const store = c.get('store');
-  const body = await readBody<{ slot?: string; staff?: string; d1?: number; d2?: number; w1?: number; w2?: number; fix?: unknown }>(c);
+  const body = await readBody<{ slot?: string; staff?: string; d1?: number; d2?: number; w1?: number; w2?: number; k?: number; fix?: unknown }>(c);
   const def = slotDef(String(body.slot));
   if (!def) return err(c, 400, 'bad_slot');
   const espressoSlots = store.espresso_mode === 'single' ? ['espresso'] : ['espresso_hot', 'espresso_cold'];
@@ -186,6 +190,11 @@ app.post('/api/batches', requireStore, async (c) => {
   const staff = String(body.staff ?? '').trim().slice(0, 40);
   if (!staff) return err(c, 400, 'no_staff');
   if (def.kind === 'espresso' && (!isValidDose(body.d1) || !isValidDose(body.d2))) return err(c, 400, 'bad_dose');
+  let tank = 1;
+  if (def.kind === 'drip') {
+    tank = body.k ?? 1;
+    if (!Number.isInteger(tank) || tank < 1 || tank > tanksFor(safeJson(store.tanks, {}), def.slot)) return err(c, 400, 'bad_tank');
+  }
   if ((body.w1 !== undefined && !isValidThrown(body.w1)) || (body.w2 !== undefined && !isValidThrown(body.w2))) return err(c, 400, 'bad_thrown');
   const geo = checkGeofence(store, parseFix(body.fix));
   if (!geo.ok) return err(c, 403, geo.reason, { distance: geo.distance });
@@ -203,6 +212,7 @@ app.post('/api/batches', requireStore, async (c) => {
   if (geo.distance != null) batch.m = geo.distance;
   const bn = safeJson<Partial<Record<BeanKey, BeanBatch>>>(store.beans, {})[beanOf(def.slot)]?.cur;
   if (bn) batch.bn = bn;
+  if (tank > 1) batch.k = tank;
   const day = dayKey(now, tz(c.env));
   const json = JSON.stringify(batch);
   const stmts = [
@@ -376,7 +386,7 @@ app.get('/api/admin/overview', requireAdmin, async (c) => {
   const [stores, stats, usageRow] = await Promise.all([
     c.env.DB.prepare(
       `SELECT id, code, name, name_ar, lat, lng, radius_m, espresso_mode, active, syrve_code, city, region, zone, sub_zone,
-              area_manager, rom, location_type, drive_thru, coord_evidence, opening_date, source, synced_at,
+              area_manager, rom, location_type, drive_thru, coord_evidence, opening_date, source, synced_at, tanks,
               pin_hash != '' AS has_pin
        FROM stores ORDER BY code`,
     ).all(),
@@ -419,6 +429,7 @@ type StoreInput = {
   region?: string;
   area_manager?: string;
   rom?: string;
+  tanks?: Record<string, number>;
 };
 
 function validateStoreInput(b: StoreInput, creating: boolean): string | null {
@@ -429,6 +440,10 @@ function validateStoreInput(b: StoreInput, creating: boolean): string | null {
   if (b.lng != null && (typeof b.lng !== 'number' || Math.abs(b.lng) > 180)) return 'bad_location';
   if (b.radius_m !== undefined && !(Number.isInteger(b.radius_m) && b.radius_m >= 50 && b.radius_m <= 5000)) return 'bad_radius';
   if (b.espresso_mode !== undefined && !['pair', 'single'].includes(b.espresso_mode)) return 'bad_mode';
+  if (b.tanks !== undefined) {
+    if (!b.tanks || typeof b.tanks !== 'object') return 'bad_tanks';
+    for (const [k, v] of Object.entries(b.tanks)) if (!/^(hot|iced)_drip:(ethiopian|brazilian)$/.test(k) || !Number.isInteger(v) || v < 1 || v > MAX_TANKS) return 'bad_tanks';
+  }
   return null;
 }
 
@@ -440,8 +455,8 @@ app.post('/api/admin/stores', requireAdmin, async (c) => {
   const hash = await hashPin(String(b.pin), salt, c.env.SESSION_SECRET);
   try {
     const r = await c.env.DB.prepare(
-      `INSERT INTO stores (code, name, name_ar, pin_hash, pin_salt, lat, lng, radius_m, espresso_mode, created_at)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10) RETURNING id`,
+      `INSERT INTO stores (code, name, name_ar, pin_hash, pin_salt, lat, lng, radius_m, espresso_mode, created_at, tanks)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11) RETURNING id`,
     )
       .bind(
         String(b.code).toUpperCase(),
@@ -454,6 +469,7 @@ app.post('/api/admin/stores', requireAdmin, async (c) => {
         b.radius_m ?? GEOFENCE_DEFAULT_M,
         b.espresso_mode ?? 'pair',
         Date.now(),
+        JSON.stringify(b.tanks ?? {}),
       )
       .first<{ id: number }>();
     return c.json({ id: r?.id });
@@ -482,6 +498,7 @@ app.put('/api/admin/stores/:id', requireAdmin, async (c) => {
   if (b.espresso_mode !== undefined) set('espresso_mode', b.espresso_mode);
   if (b.active !== undefined) set('active', b.active ? 1 : 0);
   for (const k of ['city', 'region', 'area_manager', 'rom'] as const) if (b[k] !== undefined) set(k, String(b[k]).trim().slice(0, 80));
+  if (b.tanks !== undefined) set('tanks', JSON.stringify(b.tanks));
   if (b.pin) {
     const salt = randomId(12);
     set('pin_salt', salt);
@@ -632,6 +649,7 @@ async function sendExpiryPushes(env: Env, scheduled: number) {
        AND NOT EXISTS (
          SELECT 1 FROM json_each(d.batches) k
          WHERE json_extract(k.value, '$.s') = json_extract(j.value, '$.s')
+           AND COALESCE(json_extract(k.value, '$.k'), 1) = COALESCE(json_extract(j.value, '$.k'), 1)
            AND json_extract(k.value, '$.t') > json_extract(j.value, '$.t')
            AND json_extract(k.value, '$.v') IS NULL)`,
   )

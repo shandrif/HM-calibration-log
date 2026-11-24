@@ -102,9 +102,6 @@ button:disabled {
 .muted {
   color: var(--muted);
 }
-.small {
-  font-size: 13px;
-}
 .sr-only {
   position: absolute;
   width: 1px;
@@ -4120,4 +4117,198 @@ button.batch-tr:hover {
   .tab[data-active] svg {
     transform: none;
   }
+}
+
+/* ---------------------------------------------------------------- drip tanks */
+.tile-tanks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.tile-tanks li {
+  flex: 1 1 120px;
+  min-width: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  font-size: 13px;
+  background: color-mix(in srgb, var(--tile-ink) 6%, transparent);
+  color: var(--tile-ink);
+}
+.tile-tanks .tank-name {
+  color: var(--tile-muted);
+  white-space: nowrap;
+}
+.tile-tanks .tank-state {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.tile-tanks li[data-phase='none'] .tank-state {
+  font-weight: 500;
+  color: var(--tile-muted);
+}
+.tile-tanks li[data-phase='brewing'] .tank-state {
+  color: var(--teal-deep);
+}
+.tile-tanks li[data-phase='soon'] .tank-state {
+  color: var(--tan-deep);
+}
+.tile-tanks li[data-phase='expired'] {
+  background: var(--red);
+  color: #fff;
+}
+.tile-tanks li[data-phase='expired'] .tank-name {
+  color: rgba(255, 255, 255, 0.85);
+}
+.tile[data-phase='expired'] .tile-tanks li:not([data-phase='expired']) {
+  background: rgba(255, 255, 255, 0.16);
+}
+.tile[data-phase='expired'] .tile-tanks li:not([data-phase='expired']) .tank-state {
+  color: #fff;
+}
+.tile[data-phase='expired'] .tile-tanks li[data-phase='expired'] {
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.tank-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+  margin: 6px 0 12px;
+}
+.tank-pick {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  text-align: start;
+  box-shadow: var(--shadow-sm);
+  transition: transform 160ms var(--ease-out), box-shadow 160ms var(--ease-out);
+  cursor: pointer;
+}
+.tank-pick:active {
+  transform: scale(0.97);
+}
+.tank-pick-name {
+  font-weight: 700;
+  font-size: 17px;
+}
+.tank-pick-state {
+  font-size: 14px;
+  color: var(--muted);
+}
+.tank-pick[data-phase='expired'] {
+  border-color: var(--red);
+}
+.tank-pick[data-phase='expired'] .tank-pick-state {
+  color: var(--red);
+  font-weight: 600;
+}
+.tank-pick[data-phase='brewing'] .tank-pick-state {
+  color: var(--teal-deep);
+}
+.tank-pick[data-phase='soon'] .tank-pick-state {
+  color: var(--tan-deep);
+}
+
+.reset-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 4px 0 14px;
+}
+.reset-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.reset-item[data-active] {
+  border-color: var(--teal-deep);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--teal-deep) 18%, transparent);
+}
+.tank-tag {
+  display: inline-block;
+  margin-inline-start: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: 1px;
+  background: color-mix(in srgb, var(--tan) 30%, transparent);
+  color: var(--tan-deep);
+  white-space: nowrap;
+}
+.tank-settings {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 8px;
+}
+.tank-setting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 8px 8px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  font-size: 14px;
+}
+.tank-stepper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.tank-stepper b {
+  min-width: 1.2em;
+  text-align: center;
+  font-size: 17px;
+}
+.tank-stepper .counter-btn {
+  width: 38px;
+  height: 38px;
+  font-size: 20px;
+}
+.tank-sub {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--tan-deep);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.log-row .c-i {
+  min-width: 0;
+}
+.c-i-name {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.last-item {
+  min-width: 0;
 }

@@ -1,5 +1,5 @@
 import type { Batch, StoreInfo } from '../../shared/config';
-import { formatDose, formatGrams, thrownTenths, dripTenths } from '../../shared/config';
+import { formatDose, formatGrams, thrownTenths, dripTenths, tanksFor } from '../../shared/config';
 import type { Strings } from '../lib/i18n';
 import { slotLabel } from '../lib/i18n';
 import { batchOutcome, discardByBean } from '../lib/board';
@@ -114,7 +114,7 @@ export function ReportPages({ t, lang, store, day, batches, generatedAt }: { t: 
                   <span className="pdf-count">{l.count}</span>
                 </div>
               ) : (
-                <Row key={i} t={t} b={l.b} all={batches} now={generatedAt} />
+                <Row key={i} t={t} b={l.b} all={batches} now={generatedAt} tanks={store.tanks} />
               ),
             )}
           </div>
@@ -156,14 +156,17 @@ function Stat({ label, value, tone }: { label: string; value: React.ReactNode; t
   );
 }
 
-function Row({ t, b, all, now }: { t: Strings; b: Batch; all: Batch[]; now: number }) {
+function Row({ t, b, all, now, tanks }: { t: Strings; b: Batch; all: Batch[]; now: number; tanks: StoreInfo['tanks'] }) {
   const outcome = batchOutcome(b, all, now);
   const label = slotLabel(t, b.s);
   const statusText = { voided: t.voided, replaced: t.replaced, expired: t.expired, active: t.active }[outcome];
   return (
     <div className="pdf-row" data-outcome={outcome} style={{ height: ROW_H }}>
       <span className="c-time" dir="ltr">{clock(b.t)}</span>
-      <span className="c-item">{label.item}</span>
+      <span className="c-item">
+        {label.item}
+        {tanksFor(tanks, b.s) > 1 || (b.k ?? 1) > 1 ? ` · ${t.tank} ${b.k ?? 1}` : ''}
+      </span>
       <span className="c-bn" dir="ltr">{b.bn ?? ''}</span>
       <span className="c-dose" dir="ltr">{b.d1 != null ? `${formatDose(b.d1)} · ${formatDose(b.d2)}` : ''}</span>
       <span className="c-by">{b.n}</span>

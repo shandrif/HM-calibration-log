@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { toast } from 'sonner';
-import { type Batch, type StoreInfo, type BeanKey, slotsFor, DISCARD_QUICK_ML, MAX_THROWN, DOSE_TENTHS_G, thrownTenths, beanOf, BEAN_KEYS, normalizeBatch, dripTenths } from '../shared/config';
+import { type Batch, type StoreInfo, type BeanKey, slotsFor, DISCARD_QUICK_ML, MAX_THROWN, DOSE_TENTHS_G, thrownTenths, beanOf, BEAN_KEYS, normalizeBatch, dripTenths, tanksFor } from '../shared/config';
 import { api, ApiError } from './lib/api';
 import { useI18n, fmt, slotLabel } from './lib/i18n';
-import { useNow, setServerNow, nowMs, clock, dayKey } from './lib/time';
+import { useNow, setServerNow, nowMs, clock, dayKey, countdown } from './lib/time';
 import { useGeo, formatDistance } from './lib/geo';
 import { useWakeLock } from './lib/wakelock';
 import { unlockAudio, startAlarm, stopAlarm, chime, onSoundBlocked, resumeAlarmIfNeeded } from './lib/sound';
 import { haptic } from './lib/haptics';
-import { slotView, loadAcks, saveAcks, ls, lsSet, type SlotView } from './lib/board';
+import { slotView, loadAcks, saveAcks, ls, lsSet, tankOf, type SlotView, type TankView } from './lib/board';
 import { Tile } from './components/Tile';
 import { Grams } from './components/Grams';
 import { Sheet } from './components/Sheet';
@@ -186,7 +186,8 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
   const [staffSheet, setStaffSheet] = useState<null | { then?: (name: string) => void }>(null);
   const [espressoSheet, setEspressoSheet] = useState<null | { slot: string; d1: number; d2: number; w1: number; w2: number; by: string }>(null);
   const [discardSheet, setDiscardSheet] = useState<null | { id: string; day: string; label: string }>(null);
-  const [resetSheet, setResetSheet] = useState<null | { batch: Batch }>(null);
+  const [resetSheet, setResetSheet] = useState<null | { batches: Batch[]; pick?: string }>(null);
+  const [tankSheet, setTankSheet] = useState<null | { view: SlotView }>(null);
 
   const onShift = useMemo(() => shift.filter((n) => store.staff.includes(n)), [shift, store.staff]);
   const setShift = (names: string[]) => {
@@ -203,11 +204,17 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
   const shiftOrdered = useMemo(() => (lastBy && onShift.includes(lastBy) ? [lastBy, ...onShift.filter((n) => n !== lastBy)] : onShift), [onShift, lastBy]);
 
   const slots = useMemo(() => slotsFor(store.espresso_mode), [store.espresso_mode]);
-  const views = useMemo(() => slots.map((d) => slotView(d, batches, now)), [slots, batches, now]);
+  const views = useMemo(() => slots.map((d) => slotView(d, batches, now, tanksFor(store.tanks, d.slot))), [slots, batches, now, store.tanks]);
+  const multiTank = (v: SlotView) => v.def.kind === 'drip' && tanksFor(store.tanks, v.def.slot) > 1;
 
   // ---------------------------------------------------------------- alarm
   const alarming = useMemo(
-    () => views.filter((v) => v.phase === 'expired' && v.current && !acks.has(v.current.id) && now - v.current.x < 6 * 3600 * 1000),
+    () =>
+      views.flatMap((v) =>
+        v.tanks
+          .filter((tk) => tk.phase === 'expired' && tk.current && !acks.has(tk.current.id) && now - tk.current.x < 6 * 3600 * 1000)
+          .map((tk) => ({ v, tk })),
+      ),
     [views, acks, now],
   );
   // Sound needs a tap before browsers allow it: unlock on every tap anywhere (sign-in, gate, tiles…).
@@ -236,7 +243,7 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
   const ackAll = () => {
     haptic(20);
     const next = new Set(acks);
-    alarming.forEach((v) => v.current && next.add(v.current.id));
+    alarming.forEach(({ tk }) => tk.current && next.add(tk.current.id));
     setAcks(next);
     saveAcks(next);
   };
@@ -275,12 +282,14 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
     else setStaffSheet({ then: fn });
   };
 
-  const startBatch = async (view: SlotView, name: string, doses?: { d1: number; d2: number; w1?: number; w2?: number }) => {
-    const previous = view.current && nowMs() - view.current.t < 12 * 3600 * 1000 ? view.current : undefined;
+  const startBatch = async (view: SlotView, name: string, doses?: { d1: number; d2: number; w1?: number; w2?: number }, tank = 1) => {
+    // the batch being replaced is the one in the same tank (espresso has a single "tank")
+    const inTank = view.def.kind === 'drip' ? view.tanks.find((x) => x.tank === tank)?.current : view.current;
+    const previous = inTank && nowMs() - inTank.t < 12 * 3600 * 1000 ? inTank : undefined;
     setBusySlot(view.def.slot);
     try {
       setLastBy(name);
-      const res = await api.start({ slot: view.def.slot, staff: name, ...doses, fix: geo.fix.current });
+      const res = await api.start({ slot: view.def.slot, staff: name, ...doses, ...(view.def.kind === 'drip' ? { k: tank } : {}), fix: geo.fix.current });
       setServerNow(res.now);
       setBatches((b) => [...b, res.batch]);
       haptic(15);
@@ -293,7 +302,7 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
       }
       if (view.def.kind === 'drip' && previous) {
         const l = slotLabel(t, view.def.slot);
-        setDiscardSheet({ id: res.batch.id, day: res.day, label: `${l.group} · ${l.item}` });
+        setDiscardSheet({ id: res.batch.id, day: res.day, label: `${l.group} · ${l.item}${multiTank(view) ? ` · ${t.tank} ${tank}` : ''}` });
       }
     } catch (e) {
       handleError(e);
@@ -331,7 +340,12 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
       else open(onShift.length === 1 ? onShift[0] : lastBy && onShift.includes(lastBy) ? lastBy : '');
     } else {
       const l = slotLabel(t, view.def.slot);
-      withStaff(`${l.group} · ${l.item}`, (name) => void startBatch(view, name));
+      const go = (tank: number) => withStaff(`${l.group} · ${l.item}${multiTank(view) ? ` · ${t.tank} ${tank}` : ''}`, (name) => void startBatch(view, name, undefined, tank));
+      if (!multiTank(view)) return go(1);
+      // an empty tank is filled automatically; only when every tank holds coffee do we ask which one
+      const empty = view.tanks.find((tk) => tk.phase === 'none');
+      if (empty) return go(empty.tank);
+      setTankSheet({ view });
     }
   };
 
@@ -398,9 +412,10 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
             <IconBell />
             <span className="alarm-text">
               {fmt(t.alarmActive, { n: alarming.length })}:{' '}
-              {alarming.map((v) => {
+              {alarming.map(({ v, tk }) => {
                 const l = slotLabel(t, v.def.slot);
-                return `${v.def.group === 'espresso' ? l.group + ' ' + l.item : l.group + ' · ' + l.item}`;
+                const name = v.def.group === 'espresso' ? l.group + ' ' + l.item : l.group + ' · ' + l.item;
+                return multiTank(v) ? `${name} (${t.tank} ${tk.tank})` : name;
               }).join(', ')}
             </span>
             {soundBlocked ? (
@@ -451,11 +466,15 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
                             key={v.def.slot}
                             view={v}
                             now={now}
-                            alarming={alarming.includes(v)}
+                            alarming={alarming.some((a) => a.v === v)}
+                            multiTank={multiTank(v)}
                             busy={busySlot === v.def.slot}
                             onPrimary={() => onPrimary(v)}
-                            onUndo={() => v.current && void voidBatch(v.current)}
-                            onMenu={() => v.current && setResetSheet({ batch: v.current })}
+                            onUndo={() => v.latest && void voidBatch(v.latest)}
+                            onMenu={() => {
+                              const live = v.tanks.filter((tk) => tk.current && tk.phase !== 'expired' && tk.phase !== 'none').map((tk) => tk.current!);
+                              if (live.length) setResetSheet({ batches: live, pick: live.length === 1 ? live[0].id : undefined });
+                            }}
                           />
                         ))}
                       </div>
@@ -649,23 +668,72 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
         }}
       />
 
+      <Sheet open={!!tankSheet} onOpenChange={(o) => !o && setTankSheet(null)} title={t.whichTank}>
+        {tankSheet && (
+          <div className="sheet-body">
+            <p className="sheet-text muted">
+              {slotLabel(t, tankSheet.view.def.slot).group} · {slotLabel(t, tankSheet.view.def.slot).item} — {t.allTanksInUse}
+            </p>
+            <div className="tank-grid">
+              {tankSheet.view.tanks.map((tk) => (
+                <button
+                  key={tk.tank}
+                  className="tank-pick"
+                  data-phase={tk.phase}
+                  onClick={() => {
+                    const v = tankSheet.view;
+                    setTankSheet(null);
+                    const l = slotLabel(t, v.def.slot);
+                    withStaff(`${l.group} · ${l.item} · ${t.tank} ${tk.tank}`, (name) => void startBatch(v, name, undefined, tk.tank));
+                  }}
+                >
+                  <span className="tank-pick-name">
+                    {t.tank} {tk.tank}
+                  </span>
+                  <span className="tank-pick-state num">{tankStatus(tk, t)}</span>
+                </button>
+              ))}
+            </div>
+            <p className="sheet-text muted small">{t.tankReplaceHint}</p>
+          </div>
+        )}
+      </Sheet>
+
       <Sheet open={!!resetSheet} onOpenChange={(o) => !o && setResetSheet(null)} title={t.reset}>
         {resetSheet && (
           <div className="sheet-body">
             <p className="sheet-text">{t.resetConfirm}</p>
-            <p className="sheet-text muted num">
-              {slotLabel(t, resetSheet.batch.s).group} · {slotLabel(t, resetSheet.batch.s).item} · {clock(resetSheet.batch.t)} · {resetSheet.batch.n}
-            </p>
+            <div className="reset-list" role="radiogroup">
+              {resetSheet.batches.map((b) => (
+                <button
+                  key={b.id}
+                  role="radio"
+                  aria-checked={resetSheet.pick === b.id}
+                  className="reset-item"
+                  data-active={resetSheet.pick === b.id || undefined}
+                  onClick={() => setResetSheet({ ...resetSheet, pick: b.id })}
+                >
+                  <b>
+                    {slotLabel(t, b.s).group} · {slotLabel(t, b.s).item}
+                    {b.s.includes('_drip') && tanksFor(store.tanks, b.s) > 1 ? ` · ${t.tank} ${tankOf(b)}` : ''}
+                  </b>
+                  <span className="num muted">
+                    {clock(b.t)} · {b.n}
+                  </span>
+                </button>
+              ))}
+            </div>
             <div className="btn-row">
               <button className="btn btn-ghost btn-lg" onClick={() => setResetSheet(null)}>
                 {t.cancel}
               </button>
               <button
                 className="btn btn-danger btn-lg"
+                disabled={!resetSheet.pick}
                 onClick={() => {
-                  const b = resetSheet.batch;
+                  const b = resetSheet.batches.find((x) => x.id === resetSheet.pick);
                   setResetSheet(null);
-                  void voidBatch(b);
+                  if (b) void voidBatch(b);
                 }}
               >
                 {t.confirm}
@@ -677,6 +745,16 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
 
     </div>
   );
+}
+
+// ---------------------------------------------------------------- tanks
+
+/** "12:04 left", "Brewing 3:10", "Expired +2:00", "Empty". */
+export function tankStatus(tk: TankView, t: ReturnType<typeof useI18n>['t']) {
+  if (tk.phase === 'none') return t.tankEmpty;
+  if (tk.phase === 'brewing') return `${t.brewing} ${countdown(tk.remaining)}`;
+  if (tk.phase === 'expired') return `${t.expired} +${countdown(-tk.remaining)}`;
+  return `${countdown(tk.remaining)} ${t.fresh}`;
 }
 
 // ---------------------------------------------------------------- bean batches
