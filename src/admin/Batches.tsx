@@ -123,29 +123,111 @@ export function BatchesPanel({ stores, today }: { stores: AdminStore[]; today: s
       .sort((x, y) => BEAN_ORDER[x.bean] - BEAN_ORDER[y.bean] || wastePer(y) - wastePer(x) || y.logs - x.logs);
   }, [data, stores, bean, q]);
 
-  const exportCsv = () => {
-    const head = ['Batch', 'Bean', 'Stores', 'Calibrations', 'Drip discarded g', 'Drip g per batch brewed', 'Espresso thrown g', 'Espresso g per calibration', 'Dose 1 avg', 'Dose 1 range', 'Dose 2 avg', 'Dose 2 range', 'First day', 'Last day'];
-    const lines = batches.map((a) => [
-      a.bn,
-      BEAN_LABEL[a.bean],
-      a.stores.size,
-      a.logs,
-      a.bean === 'espresso' ? '' : (dripTenths(a.ml) / 10).toFixed(1),
-      a.bean === 'espresso' ? '' : (a.logs ? dripTenths(a.ml) / 10 / a.logs : 0).toFixed(1),
-      a.bean === 'espresso' ? (a.wg / 10).toFixed(1) : '',
-      a.bean === 'espresso' && a.logs ? (a.wg / 10 / a.logs).toFixed(1) : '',
-      a.bean === 'espresso' ? avgDose(a.sd1, a.espLogs) : '',
-      a.bean === 'espresso' && a.mn1 != null ? `${formatDose(a.mn1)}–${formatDose(a.mx1)}` : '',
-      a.bean === 'espresso' ? avgDose(a.sd2, a.espLogs) : '',
-      a.bean === 'espresso' && a.mn2 != null ? `${formatDose(a.mn2)}–${formatDose(a.mx2)}` : '',
-      a.first,
-      a.last,
-    ]);
-    const csv = [head, ...lines].map((l) => l.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
-    const el = document.createElement('a');
-    el.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
-    el.download = `HM-batches-${data?.from}-to-${data?.to}.csv`;
-    el.click();
+  const exportXlsx = async () => {
+    if (!data) return;
+    const grams = (a: { bean: BeanKey; ml: number; wg: number }) => (a.bean === 'espresso' ? a.wg / 10 : dripTenths(a.ml) / 10);
+    const kg = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(2)} kg` : `${v.toFixed(1)} g`);
+    const period = data.from === data.to ? data.from : `${data.from} → ${data.to}`;
+    const byBean = (b: BeanKey) => batches.filter((a) => a.bean === b);
+    const sumOf = (list: BatchAgg[], f: (a: BatchAgg) => number) => list.reduce((x, a) => x + f(a), 0);
+    const drip = batches.filter((a) => a.bean !== 'espresso');
+    const esp = byBean('espresso');
+    const ranked = [...batches].filter((a) => a.logs).sort((x, y) => grams(y) / y.logs - grams(x) / x.logs).slice(0, 12);
+    const { hBars, donut, BEAN_COLOR } = await import('./charts');
+    const { exportReport } = await import('./xlsx');
+    const beans: BeanKey[] = ['espresso', 'ethiopian', 'brazilian'];
+    await exportReport({
+      file: `HM-batches-${data.from}-to-${data.to}.xlsx`,
+      title: 'Results by bean batch',
+      period,
+      filters: [bean !== 'all' ? BEAN_LABEL[bean] : '', q.trim()].filter(Boolean).join(' · ') || undefined,
+      kpis: [
+        { label: 'Batches tracked', value: String(batches.length), sub: beans.map((b) => `${BEAN_LABEL[b]} ${byBean(b).length}`).join(' · '), tone: 'plain' },
+        { label: 'Calibrations', value: String(sumOf(batches, (a) => a.logs)), sub: beans.map((b) => `${BEAN_LABEL[b]} ${sumOf(byBean(b), (a) => a.logs)}`).join(' · '), tone: 'good' },
+        { label: 'Drip discarded', value: kg(sumOf(drip, grams)), sub: `Ethiopian ${kg(sumOf(byBean('ethiopian'), grams))} · Brazilian ${kg(sumOf(byBean('brazilian'), grams))}`, tone: 'eth' },
+        { label: 'Espresso thrown', value: kg(sumOf(esp, grams)), sub: `Dose 1 ×${sumOf(esp, (a) => a.w1)} · Dose 2 ×${sumOf(esp, (a) => a.w2)}`, tone: 'esp' },
+      ],
+      charts: [
+        donut({
+          title: 'Calibrations by bean',
+          parts: beans.map((b) => ({ name: BEAN_LABEL[b], color: BEAN_COLOR[b], value: sumOf(byBean(b), (a) => a.logs) })),
+          fmt: (v) => String(Math.round(v)),
+        }),
+        donut({
+          title: 'Waste by bean',
+          sub: 'Coffee weight',
+          parts: beans.map((b) => ({ name: BEAN_LABEL[b], color: BEAN_COLOR[b], value: sumOf(byBean(b), grams) })),
+          fmt: kg,
+        }),
+        hBars({
+          title: 'Highest waste per calibration',
+          sub: 'Top batches · grams wasted per calibration',
+          labels: ranked.map((a) => `${a.bn} · ${BEAN_LABEL[a.bean]}`),
+          series: beans.map((b) => ({ name: BEAN_LABEL[b], color: BEAN_COLOR[b], values: ranked.map((a) => (a.bean === b ? grams(a) / a.logs : 0)) })),
+          fmt: (v) => `${v.toFixed(1)} g`,
+          w: 1120,
+        }),
+      ],
+      notes: [
+        'Waste is coffee weight: drip 1 L brewed = 70 g; espresso dose 1 = 18.8 g, dose 2 = 25.8 g per shot thrown.',
+        'Dose settings are the grinder settings logged at calibration (average rounded to the 5-step scale).',
+        'Only calibrations with a batch number are included. Reset batches are excluded.',
+      ],
+      sheets: [
+        {
+          name: 'Batches',
+          title: `Bean batches · ${period}`,
+          columns: [
+            { header: 'Batch', key: 'bn', width: 16 },
+            { header: 'Bean', key: 'bean', width: 12, bean: true },
+            { header: 'Stores', key: 'stores', fmt: '0', width: 9 },
+            { header: 'Calibrations', key: 'logs', fmt: '0', width: 12 },
+            { header: 'Waste g', key: 'g', fmt: '#,##0.0', bar: '#C2564A', width: 12 },
+            { header: 'g per calibration', key: 'per', fmt: '#,##0.0', bar: '#A9793B', width: 15 },
+            { header: 'Drip discards', key: 'discards', fmt: '0', width: 12 },
+            { header: 'Dose 1 shots thrown', key: 'w1', fmt: '0', width: 13 },
+            { header: 'Dose 2 shots thrown', key: 'w2', fmt: '0', width: 13 },
+            { header: 'Dose 1 avg', key: 'd1', width: 11 },
+            { header: 'Dose 1 range', key: 'r1', width: 14 },
+            { header: 'Dose 2 avg', key: 'd2', width: 11 },
+            { header: 'Dose 2 range', key: 'r2', width: 14 },
+            { header: 'First day', key: 'first', width: 12 },
+            { header: 'Last day', key: 'last', width: 12 },
+          ],
+          rows: batches.map((a) => ({
+            bn: a.bn, bean: BEAN_LABEL[a.bean], stores: a.stores.size, logs: a.logs, g: grams(a), per: a.logs ? grams(a) / a.logs : 0,
+            discards: a.bean === 'espresso' ? null : a.discards, w1: a.bean === 'espresso' ? a.w1 : null, w2: a.bean === 'espresso' ? a.w2 : null,
+            d1: a.bean === 'espresso' ? avgDose(a.sd1, a.espLogs) : '', r1: a.bean === 'espresso' && a.mn1 != null ? `${formatDose(a.mn1)}–${formatDose(a.mx1)}` : '',
+            d2: a.bean === 'espresso' ? avgDose(a.sd2, a.espLogs) : '', r2: a.bean === 'espresso' && a.mn2 != null ? `${formatDose(a.mn2)}–${formatDose(a.mx2)}` : '',
+            first: a.first, last: a.last,
+          })),
+        },
+        {
+          name: 'Batch by store',
+          title: `Each batch per store · ${period}`,
+          columns: [
+            { header: 'Batch', key: 'bn', width: 16 },
+            { header: 'Bean', key: 'bean', width: 12, bean: true },
+            { header: 'Store', key: 'store', width: 30 },
+            { header: 'Code', key: 'code', width: 10 },
+            { header: 'City', key: 'city', width: 14 },
+            { header: 'Area manager', key: 'am', width: 22 },
+            { header: 'Calibrations', key: 'logs', fmt: '0', width: 12 },
+            { header: 'Waste g', key: 'g', fmt: '#,##0.0', bar: '#C2564A', width: 12 },
+            { header: 'g per calibration', key: 'per', fmt: '#,##0.0', width: 15 },
+            { header: 'First day', key: 'first', width: 12 },
+            { header: 'Last day', key: 'last', width: 12 },
+          ],
+          rows: batches.flatMap((a) =>
+            [...a.stores.values()].map((st) => {
+              const s = storeById.get(st.sid);
+              const g = a.bean === 'espresso' ? st.wg / 10 : dripTenths(st.ml) / 10;
+              return { bn: a.bn, bean: BEAN_LABEL[a.bean], store: s?.name ?? `#${st.sid}`, code: s?.code ?? '', city: s?.city ?? '', am: s?.area_manager ?? '', logs: st.logs, g, per: st.logs ? g / st.logs : 0, first: st.first, last: st.last };
+            }),
+          ),
+        },
+      ],
+    });
   };
 
   return (
@@ -170,8 +252,8 @@ export function BatchesPanel({ stores, today }: { stores: AdminStore[]; today: s
         </div>
         <input className="input admin-search" placeholder="Search batch number" value={q} onChange={(e) => setQ(e.target.value)} />
         <span style={{ flex: 1 }} />
-        <button className="btn btn-ghost" onClick={exportCsv} disabled={!batches.length}>
-          Export CSV
+        <button className="btn btn-ghost" onClick={() => void exportXlsx().catch(() => toast.error('Could not export'))} disabled={!batches.length}>
+          Export Excel
         </button>
       </div>
       <p className="muted small" style={{ marginTop: 0 }}>

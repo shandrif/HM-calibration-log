@@ -104,21 +104,109 @@ export function ChecksPanel({ stores, today, filterNote }: { stores: AdminStore[
     return t;
   }, [rows]);
 
-  const exportCsv = () => {
-    const head = ['Group', 'Detail', 'Bean', 'Checks expected', 'Checks done', 'Done %', 'Passed', 'Still failing', 'Failed first try', 'Too coarse', 'Too fine', 'Uneven / weighing', 'TDS low', 'TDS high', 'Re-tested'];
-    const lines = rows.flatMap((r) =>
-      BEANS.map((b) => {
-        const s = r.beans[b];
-        return [r.label, r.sub, BEAN_LABEL[b], s.expected, s.done, pct(s.done, s.expected), s.passed, s.failing, s.failedFirst, s.coarse, s.fine, s.uneven, s.low, s.high, s.retested];
-      }),
-    );
-    const csv = [head, ...lines].map((l) => l.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
-    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `HM-grind-checks-${groupBy}-${data?.from}-to-${data?.to}.csv`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  const exportXlsx = async () => {
+    if (!data) return;
+    const groupName = groupBy === 'store' ? 'Store' : groupBy === 'rom' ? 'ROM' : groupBy === 'city' ? 'City' : 'Area manager';
+    const period = data.from === data.to ? data.from : `${data.from} → ${data.to}`;
+    const P = (a: number, b: number) => (b ? `${pct(a, b)}%` : '–');
+    const { hBars, vBars, BEAN_COLOR } = await import('./charts');
+    const { exportReport } = await import('./xlsx');
+    const e = totals.ethiopian;
+    const b = totals.brazilian;
+    const worstRows = rows
+      .filter((r) => BEANS.some((x) => r.beans[x].expected))
+      .slice(0, 12);
+    await exportReport({
+      file: `HM-grind-checks-${groupBy}-${data.from}-to-${data.to}.xlsx`,
+      title: 'Grind & TDS checks',
+      period: `${period} (shift days)`,
+      filters: filterNote || undefined,
+      kpis: [
+        { label: 'Ethiopian · checks done', value: P(e.done, e.expected), sub: `${e.done} of ${e.expected} due`, tone: 'eth' },
+        { label: 'Ethiopian · passed', value: P(e.passed, e.done), sub: `${e.failing} still failing · ${e.retested} re-tested`, tone: e.failing ? 'bad' : 'good' },
+        { label: 'Brazilian · checks done', value: P(b.done, b.expected), sub: `${b.done} of ${b.expected} due`, tone: 'bra' },
+        { label: 'Brazilian · passed', value: P(b.passed, b.done), sub: `${b.failing} still failing · ${b.retested} re-tested`, tone: b.failing ? 'bad' : 'good' },
+        { label: 'Grind problems (first try)', value: String(e.coarse + e.fine + e.uneven + b.coarse + b.fine + b.uneven), sub: `Coarse ${e.coarse + b.coarse} · Fine ${e.fine + b.fine} · Uneven ${e.uneven + b.uneven}`, tone: 'plain' },
+        { label: 'TDS problems (first try)', value: String(e.low + e.high + b.low + b.high), sub: `Low ${e.low + b.low} · High ${e.high + b.high}`, tone: 'plain' },
+      ],
+      charts: [
+        vBars({
+          title: 'Done and passed, by bean',
+          sub: 'Share of checks due / done',
+          labels: ['Ethiopian', 'Brazilian'],
+          series: [
+            { name: 'Done', color: '#1D1B17', values: [pct(e.done, e.expected), pct(b.done, b.expected)] },
+            { name: 'Passed', color: '#2B8A74', values: [pct(e.passed, e.done), pct(b.passed, b.done)] },
+          ],
+          fmt: (v) => `${Math.round(v)}%`,
+          max: 100,
+          h: 260,
+        }),
+        vBars({
+          title: 'Problems found, by bean',
+          sub: 'First try of each check',
+          labels: ['Too coarse', 'Too fine', 'Uneven', 'TDS low', 'TDS high'],
+          series: [
+            { name: 'Ethiopian', color: BEAN_COLOR.ethiopian, values: [e.coarse, e.fine, e.uneven, e.low, e.high] },
+            { name: 'Brazilian', color: BEAN_COLOR.brazilian, values: [b.coarse, b.fine, b.uneven, b.low, b.high] },
+          ],
+          fmt: (v) => String(Math.round(v)),
+          h: 260,
+        }),
+        hBars({
+          title: `Lowest completion · ${groupName.toLowerCase()}s`,
+          sub: 'Checks done % per bean (worst first)',
+          labels: worstRows.map((r) => r.label),
+          series: [
+            { name: 'Ethiopian', color: BEAN_COLOR.ethiopian, values: worstRows.map((r) => pct(r.beans.ethiopian.done, r.beans.ethiopian.expected) / 2) },
+            { name: 'Brazilian', color: BEAN_COLOR.brazilian, values: worstRows.map((r) => pct(r.beans.brazilian.done, r.beans.brazilian.expected) / 2) },
+          ],
+          fmt: (v) => `${Math.round(v)}% avg`,
+          max: 100,
+          w: 1120,
+        }),
+      ],
+      notes: [
+        'One check per bean per shift: morning 04:00–16:00, evening 16:00–04:00 (Riyadh). A check counts as missed an hour after the shift starts.',
+        'Targets: top (>1000 µm) 10–11 g, middle (800–1000 µm) 4–5 g, base (<800 µm) 4–5 g of a 20 g sample; hot drip TDS 1.30–1.80 %.',
+        'Passed / failing use the latest attempt of each check; problems count the first try.',
+      ],
+      sheets: [
+        {
+          name: 'By ' + groupName.toLowerCase(),
+          title: `Grind & TDS checks by ${groupName.toLowerCase()} · ${period}`,
+          columns: [
+            { header: groupName, key: 'name', width: 30 },
+            { header: 'Detail', key: 'sub', width: 28 },
+            { header: 'Bean', key: 'bean', width: 12, bean: true },
+            { header: 'Due', key: 'expected', fmt: '0', width: 8 },
+            { header: 'Done', key: 'done', fmt: '0', width: 8 },
+            { header: 'Done %', key: 'donePct', fmt: '0%', scale: 'goodHigh', width: 10 },
+            { header: 'Passed', key: 'passed', fmt: '0', width: 9 },
+            { header: 'Pass %', key: 'passPct', fmt: '0%', scale: 'goodHigh', width: 10 },
+            { header: 'Still failing', key: 'failing', fmt: '0', bar: '#C2564A', width: 12 },
+            { header: 'Failed first try', key: 'failedFirst', fmt: '0', width: 12 },
+            { header: 'Too coarse', key: 'coarse', fmt: '0', width: 10 },
+            { header: 'Too fine', key: 'fine', fmt: '0', width: 10 },
+            { header: 'Uneven / weighing', key: 'uneven', fmt: '0', width: 12 },
+            { header: 'TDS low', key: 'low', fmt: '0', width: 9 },
+            { header: 'TDS high', key: 'high', fmt: '0', width: 9 },
+            { header: 'Re-tested', key: 'retested', fmt: '0', width: 10 },
+          ],
+          rows: rows.flatMap((r) =>
+            BEANS.map((bn) => {
+              const st = r.beans[bn];
+              return {
+                name: r.label, sub: groupBy === 'store' ? r.sub : `${r.stores} stores`, bean: BEAN_LABEL[bn],
+                expected: st.expected, done: st.done, donePct: st.expected ? st.done / st.expected : null,
+                passed: st.passed, passPct: st.done ? st.passed / st.done : null, failing: st.failing, failedFirst: st.failedFirst,
+                coarse: st.coarse, fine: st.fine, uneven: st.uneven, low: st.low, high: st.high, retested: st.retested,
+              };
+            }),
+          ),
+        },
+      ],
+    });
   };
 
   return (
@@ -182,8 +270,8 @@ export function ChecksPanel({ stores, today, filterNote }: { stores: AdminStore[
           ))}
         </div>
         <span style={{ flex: 1 }} />
-        <button className="btn btn-ghost" onClick={exportCsv} disabled={!data}>
-          Export CSV
+        <button className="btn btn-ghost" onClick={() => void exportXlsx().catch(() => toast.error('Could not export'))} disabled={!data}>
+          Export Excel
         </button>
       </div>
 

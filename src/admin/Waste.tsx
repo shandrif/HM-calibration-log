@@ -15,7 +15,6 @@ const RANGES = [
 
 /** Drip ml → coffee weight text (1 L = 70 g). */
 const G = (ml: number) => formatGrams(dripTenths(ml));
-const g1 = (tenths: number) => (tenths / 10).toFixed(1);
 
 interface Row {
   key: string;
@@ -107,17 +106,93 @@ export function WastePanel({ stores, today, filterNote }: { stores: AdminStore[]
   const withWaste = rows.filter((r) => r.eth + r.bra + r.w1 + r.w2 > 0);
   const storesWithWaste = groupBy === 'store' ? withWaste.length : rows.filter((r) => r.eth + r.bra > 0).reduce((a, r) => a + r.stores, 0);
 
-  const exportCsv = () => {
-    const head = ['Group', 'Detail', 'Ethiopian g', 'Ethiopian hot g', 'Ethiopian iced g', 'Brazilian g', 'Brazilian hot g', 'Brazilian iced g', 'Drip total g', 'Drip discard events', 'Drip batches', 'Espresso dose 1 shots thrown', 'Espresso dose 2 shots thrown', 'Espresso thrown g', 'Total coffee wasted g'];
-    const d = (ml: number) => g1(dripTenths(ml));
-    const lines = rows.map((r) => [r.label, r.sub, d(r.eth), d(r.ethHot), d(r.ethIced), d(r.bra), d(r.braHot), d(r.braIced), d(r.eth + r.bra), r.events, r.batches, r.w1, r.w2, g1(r.wg), g1(grams(r))]);
-    const csv = [head, ...lines].map((l) => l.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
-    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `HM-drip-waste-${groupBy}-${data?.from}-to-${data?.to}.csv`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  const exportXlsx = async () => {
+    if (!data) return;
+    const g = (ml: number) => dripTenths(ml) / 10; // grams
+    const groupName = groupBy === 'store' ? 'Store' : groupBy === 'rom' ? 'ROM' : groupBy === 'city' ? 'City' : 'Area manager';
+    const kg = (grams: number) => (grams >= 1000 ? `${(grams / 1000).toFixed(2)} kg` : `${grams.toFixed(1)} g`);
+    const top = withWaste.slice(0, 12);
+    const period = data.from === data.to ? data.from : `${data.from} → ${data.to}`;
+    const { hBars, donut, vBars, BEAN_COLOR } = await import('./charts');
+    const { exportReport } = await import('./xlsx');
+    await exportReport({
+      file: `HM-bean-waste-${groupBy}-${data.from}-to-${data.to}.xlsx`,
+      title: 'Bean waste report',
+      period,
+      filters: filterNote || undefined,
+      kpis: [
+        { label: 'Total coffee wasted', value: kg(grams(total) / 10), sub: `${storesWithWaste} of ${stores.length} stores had waste`, tone: 'bad' },
+        { label: 'Ethiopian (drip)', value: kg(g(total.eth)), sub: `Hot ${kg(g(total.ethHot))} · Iced ${kg(g(total.ethIced))}`, tone: 'eth' },
+        { label: 'Brazilian (drip)', value: kg(g(total.bra)), sub: `Hot ${kg(g(total.braHot))} · Iced ${kg(g(total.braIced))}`, tone: 'bra' },
+        { label: 'Espresso thrown', value: kg(total.wg / 10), sub: `Dose 1 ×${total.w1} · Dose 2 ×${total.w2}`, tone: 'esp' },
+      ],
+      charts: [
+        donut({
+          title: 'Waste by bean',
+          sub: 'Coffee weight',
+          parts: [
+            { name: 'Ethiopian', color: BEAN_COLOR.ethiopian, value: g(total.eth) },
+            { name: 'Brazilian', color: BEAN_COLOR.brazilian, value: g(total.bra) },
+            { name: 'Espresso', color: BEAN_COLOR.espresso, value: total.wg / 10 },
+          ],
+          fmt: kg,
+        }),
+        vBars({
+          title: 'Hot vs iced drip waste',
+          sub: 'By bean',
+          labels: ['Ethiopian', 'Brazilian'],
+          series: [
+            { name: 'Hot', color: '#A9793B', values: [g(total.ethHot), g(total.braHot)] },
+            { name: 'Iced', color: '#84C6B2', values: [g(total.ethIced), g(total.braIced)] },
+          ],
+          fmt: kg,
+          h: 260,
+        }),
+        hBars({
+          title: `Top ${top.length} by total waste`,
+          sub: `${groupName}s, highest first`,
+          labels: top.map((r) => r.label),
+          series: [
+            { name: 'Ethiopian', color: BEAN_COLOR.ethiopian, values: top.map((r) => g(r.eth)) },
+            { name: 'Brazilian', color: BEAN_COLOR.brazilian, values: top.map((r) => g(r.bra)) },
+            { name: 'Espresso', color: BEAN_COLOR.espresso, values: top.map((r) => r.wg / 10) },
+          ],
+          fmt: kg,
+          w: 1120,
+        }),
+      ],
+      notes: [
+        'All waste is coffee weight. Drip: 1 L brewed = 70 g. Espresso: dose 1 = 18.8 g and dose 2 = 25.8 g per shot thrown.',
+        'Reset (voided) batches are excluded. Times are store time (Riyadh).',
+      ],
+      sheets: [
+        {
+          name: 'Waste by ' + groupName.toLowerCase(),
+          title: `Waste by ${groupName.toLowerCase()} · ${period}`,
+          columns: [
+            { header: groupName, key: 'name', width: 30 },
+            { header: 'Detail', key: 'sub', width: 30 },
+            { header: 'Ethiopian g', key: 'eth', fmt: '#,##0.0', bar: '#A9793B', width: 13 },
+            { header: 'Eth hot g', key: 'ethHot', fmt: '#,##0.0', width: 11 },
+            { header: 'Eth iced g', key: 'ethIced', fmt: '#,##0.0', width: 11 },
+            { header: 'Brazilian g', key: 'bra', fmt: '#,##0.0', bar: '#2B8A74', width: 13 },
+            { header: 'Bra hot g', key: 'braHot', fmt: '#,##0.0', width: 11 },
+            { header: 'Bra iced g', key: 'braIced', fmt: '#,##0.0', width: 11 },
+            { header: 'Espresso g', key: 'esp', fmt: '#,##0.0', bar: '#6E665C', width: 12 },
+            { header: 'Dose 1 shots', key: 'w1', fmt: '0', width: 11 },
+            { header: 'Dose 2 shots', key: 'w2', fmt: '0', width: 11 },
+            { header: 'Drip discards', key: 'events', fmt: '0', width: 12 },
+            { header: 'Drip batches', key: 'batches', fmt: '0', width: 12 },
+            { header: 'Total g', key: 'total', fmt: '#,##0.0', bar: '#C2564A', width: 13 },
+          ],
+          rows: rows.map((r) => ({
+            name: r.label, sub: groupBy === 'store' ? r.sub : `${r.stores} stores`,
+            eth: g(r.eth), ethHot: g(r.ethHot), ethIced: g(r.ethIced), bra: g(r.bra), braHot: g(r.braHot), braIced: g(r.braIced),
+            esp: r.wg / 10, w1: r.w1, w2: r.w2, events: r.events, batches: r.batches, total: grams(r) / 10,
+          })),
+        },
+      ],
+    });
   };
 
   return (
@@ -171,8 +246,8 @@ export function WastePanel({ stores, today, filterNote }: { stores: AdminStore[]
           ))}
         </div>
         <span style={{ flex: 1 }} />
-        <button className="btn btn-ghost" onClick={exportCsv} disabled={!data}>
-          Export CSV
+        <button className="btn btn-ghost" onClick={() => void exportXlsx().catch(() => toast.error('Could not export'))} disabled={!data}>
+          Export Excel
         </button>
       </div>
 
