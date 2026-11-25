@@ -5,3 +5,4 @@ dist
 *.log
 .DS_Store
 brag-output/
+__pycache__/
