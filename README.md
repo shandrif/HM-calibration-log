@@ -34,6 +34,13 @@ python3 -I scripts/sync_stores.py <exported sheet file>
 - Stores removed from the sheet are deactivated, never deleted. The script refuses to write if fewer than 50 stores parse.
 - The sheet is **not** stored in this repository (it contains staff names and emails).
 
+## Ops structure (area managers, ROMs, regions)
+
+Area manager, ROM, city and region follow head office's Ops Structure file (imported once on 25 Nov 2026,
+then edited in admin → store). The weekly master-file sync fills these only for brand-new stores and never
+overwrites them. Branches that came from the Ops file and aren't in the master file yet use their B number as
+the login code (e.g. B112, source `ops`); the sync skips a master row with the same B number.
+
 ## Bean batches
 
 Each store keeps the current batch (lot) number for **Espresso**, **Ethiopian** and **Brazilian** (hot/cold espresso share one; hot/iced drip share their origin's). The board shows them in a strip; tap one to change it when a new bag is opened (recent batches are one tap). The first log of a bean without a batch asks for it once (can be skipped). Every log is stamped with the batch in use, so it costs no extra taps.

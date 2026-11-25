@@ -22,6 +22,11 @@ Rules:
     head office generates PINs in /admin ("Generate missing PINs").
   * A master-synced store that disappears from the sheet is deactivated (never deleted).
   * Refuses to write if fewer than 50 stores are parsed (protects against a broken export).
+  * Area manager, ROM, city and region come from the Ops Structure file and are set in the app
+    (admin or a one-off import). The weekly sync fills them only for brand-new stores and never
+    overwrites them afterwards.
+  * Stores added from the Ops Structure file (source 'ops', login code = B number) are left alone,
+    and a master row whose SYRVE_CODE already belongs to such a store is skipped (no duplicates).
 """
 
 import csv
@@ -121,6 +126,8 @@ def q(v):
 
 
 TEXT_COLS = ["syrve_code", "city", "region", "zone", "sub_zone", "area_manager", "rom", "email", "location_type", "drive_thru", "coord_evidence", "opening_date"]
+# owned by the Ops Structure mapping: set on insert only, never overwritten by the weekly sync
+OPS_OWNED = {"city", "region", "area_manager", "rom"}
 
 
 def build_sql(stores, now):
@@ -129,7 +136,7 @@ def build_sql(stores, now):
         cols = ["code", "name", "name_ar", "pin_hash", "pin_salt", "lat", "lng", "radius_m", "espresso_mode", "created_at", *TEXT_COLS, "source", "synced_at"]
         vals = [s["code"], s["name"], s["name_ar"], "", "", s["lat"], s["lng"], 500, "pair", now, *[s[c] for c in TEXT_COLS], "master", now]
         updates = ["name = excluded.name", "name_ar = excluded.name_ar", "lat = COALESCE(excluded.lat, stores.lat)", "lng = COALESCE(excluded.lng, stores.lng)"]
-        updates += [f"{c} = excluded.{c}" for c in TEXT_COLS] + ["source = 'master'", "synced_at = excluded.synced_at"]
+        updates += [f"{c} = excluded.{c}" for c in TEXT_COLS if c not in OPS_OWNED] + ["source = 'master'", "synced_at = excluded.synced_at"]
         out.append(f"INSERT INTO stores ({', '.join(cols)}) VALUES ({', '.join(q(v) for v in vals)}) ON CONFLICT (code) DO UPDATE SET {', '.join(updates)};")
     # stores that came from the master file earlier but are no longer in it
     out.append(f"UPDATE stores SET active = 0 WHERE source = 'master' AND synced_at < {now} AND active = 1;")
@@ -186,7 +193,7 @@ def main():
     if len(stores) < MIN_STORES:
         raise SystemExit(f"Only {len(stores)} stores parsed (need at least {MIN_STORES}); nothing written. Check the export.")
 
-    existing_sql = "SELECT code, source, active, pin_hash != '' AS has_pin FROM stores"
+    existing_sql = "SELECT code, source, active, syrve_code, pin_hash != '' AS has_pin FROM stores"
     if dry:
         existing = []
     elif local:
@@ -194,6 +201,12 @@ def main():
     else:
         existing = d1_remote(existing_sql)[0]["results"]
     by_code = {e["code"]: e for e in existing}
+    # a branch already added from the Ops file under its B number: don't create a second store for it
+    norm = lambda c: re.sub(r"^B0*(\d+)$", r"B\1", (c or "").strip().upper())
+    ops_syrve = {norm(e["syrve_code"]) for e in existing if e.get("source") == "ops"}
+    skipped_ops = [s["code"] for s in stores if s["code"] not in by_code and norm(s["syrve_code"]) in ops_syrve]
+    stores = [s for s in stores if s["code"] not in skipped_ops]
+    codes = [s["code"] for s in stores]
     new_codes = [c for c in codes if c not in by_code]
     gone = [e["code"] for e in existing if e["source"] == "master" and e["active"] and e["code"] not in set(codes)]
     no_coords = [s["code"] for s in stores if s["lat"] is None or s["lng"] is None]
@@ -206,6 +219,7 @@ def main():
         "new_stores": new_codes,
         "updated_stores": len(stores) - len(new_codes),
         "deactivated_missing_from_sheet": gone,
+        "skipped_already_added_from_ops_file": skipped_ops,
         "stores_without_coordinates": no_coords,
         "stores_with_unconfirmed_coordinates": weak_coords,
         "stores_without_pin": sorted([c for c in codes if c in new_codes or not by_code.get(c, {}).get("has_pin")]),

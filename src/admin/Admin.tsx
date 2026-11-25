@@ -447,7 +447,10 @@ function StoreEditor({ value, onClose, onSaved }: { value: Partial<AdminStore> |
       espresso_mode: f.espresso_mode,
       tanks,
       active: !!f.active,
-      ...(value?.source === 'master' ? {} : { city: f.city ?? '', area_manager: f.area_manager ?? '', rom: f.rom ?? '' }),
+      // area manager, ROM and city follow the Ops Structure file and are edited here (the weekly sync no longer overwrites them)
+      city: f.city ?? '',
+      area_manager: f.area_manager ?? '',
+      rom: f.rom ?? '',
       ...(f.pin ? { pin: f.pin } : {}),
     };
     setBusy(true);
@@ -520,8 +523,8 @@ function StoreEditor({ value, onClose, onSaved }: { value: Partial<AdminStore> |
         </label>
         {(['city', 'area_manager', 'rom'] as const).map((k) => (
           <label className="field" key={k}>
-            <span>{{ city: 'City', area_manager: 'Area manager', rom: 'ROM' }[k]}{value?.source === 'master' ? ' (from master file)' : ''}</span>
-            <input className="input" value={(f[k] as string) ?? ''} onChange={(e) => set(k, e.target.value)} disabled={value?.source === 'master'} />
+            <span>{{ city: 'City', area_manager: 'Area manager', rom: 'ROM' }[k]}</span>
+            <input className="input" value={(f[k] as string) ?? ''} onChange={(e) => set(k, e.target.value)} />
           </label>
         ))}
         <label className="field">
