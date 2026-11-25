@@ -685,7 +685,7 @@ app.get('/api/admin/checks', requireAdmin, async (c) => {
               ROW_NUMBER() OVER (PARTITION BY store_id, sd, sh, bean ORDER BY at) AS first,
               COUNT(*) OVER (PARTITION BY store_id, sd, sh, bean) AS tries
        FROM checks WHERE sd >= ?1 AND sd <= ?2)
-     SELECT store_id AS sid,
+     SELECT store_id AS sid, bean,
             SUM(last = 1) AS done,
             SUM(last = 1 AND ok = 1) AS passed,
             SUM(last = 1 AND ok = 0) AS failing,
@@ -696,7 +696,7 @@ app.get('/api/admin/checks', requireAdmin, async (c) => {
             SUM(first = 1 AND r = 'low') AS low,
             SUM(first = 1 AND r = 'high') AS high,
             SUM(last = 1 AND tries > 1) AS retested
-     FROM a GROUP BY store_id`,
+     FROM a GROUP BY store_id, bean`,
   )
     .bind(from, to)
     .all<Record<string, number>>();

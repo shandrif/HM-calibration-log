@@ -31,6 +31,7 @@ export type LogResponse = { day: string; store: StoreInfo; batches: Batch[]; che
 
 export interface ChecksRow {
   sid: number;
+  bean: 'ethiopian' | 'brazilian';
   done: number;
   passed: number;
   failing: number;
