@@ -4999,3 +4999,85 @@ button.batch-tr:hover {
   margin: 0 -20px;
   padding: 0 20px 4px;
 }
+
+/* ---------- landscape: tile rows line up across the three stations ---------- */
+@media (min-width: 1000px) and (orientation: landscape) and (min-height: 600px) {
+  .board {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-rows: auto repeat(2, minmax(min-content, 1fr));
+    row-gap: 12px;
+  }
+  .station {
+    display: grid;
+    grid-row: span 3;
+    grid-template-rows: subgrid;
+    row-gap: 12px;
+  }
+  .station .station-head {
+    margin-bottom: 0;
+  }
+  .station .tiles {
+    grid-row: span 2;
+    display: grid;
+    grid-template-rows: subgrid;
+    grid-auto-rows: unset;
+    row-gap: 12px;
+  }
+  .station .tiles[data-count='1'] > .tile {
+    grid-row: span 2;
+  }
+  /* inside a tile: name and timer at the top, tanks / who / button at the bottom, so timers align */
+  .tile-body {
+    flex: 0 0 auto;
+  }
+  .tile-tanks,
+  .tile-meta {
+    margin-top: auto;
+  }
+  .tile-tanks + .tile-meta {
+    margin-top: 0;
+  }
+}
+/* shorter landscape screens (laptops, 768–860 px tall): a little more compact so the board fits */
+@media (min-width: 1000px) and (orientation: landscape) and (min-height: 600px) and (max-height: 880px) {
+  .tile {
+    padding: 12px 16px;
+    gap: 6px;
+  }
+  .tile-ring svg {
+    width: 64px;
+    height: 64px;
+  }
+  .tile-big {
+    font-size: clamp(34px, 3.2vw, 46px);
+  }
+  .tile-cta {
+    min-height: 48px;
+    font-size: 16px;
+  }
+  .tile-tanks li {
+    padding: 4px 10px;
+  }
+  .grind-card {
+    padding: 8px 12px;
+    margin-bottom: 12px;
+  }
+  .grind-bean {
+    min-height: 46px;
+    padding: 6px 8px 6px 12px;
+  }
+  .grind-icon {
+    width: 32px;
+    height: 32px;
+  }
+  .bag-row {
+    margin-bottom: 10px;
+  }
+  .bag {
+    padding: 7px 14px 7px 10px;
+  }
+  .station-head h2 {
+    font-size: 19px;
+  }
+}
