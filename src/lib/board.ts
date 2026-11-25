@@ -21,7 +21,8 @@ export interface SlotView {
   latest?: Batch; // most recently started non-reset batch in any tank (for Undo)
 }
 
-const STALE_MS = 18 * 3600 * 1000; // older batches are shown as "not started"
+/** A batch expired this long ago is old news: the tile goes back to "not started" (same cut-off as the buzzer). */
+const STALE_MS = 6 * 3600 * 1000;
 
 /** Tank number of a batch; batches logged before tanks existed count as tank 1. */
 export const tankOf = (b: Batch) => b.k ?? 1;
