@@ -129,6 +129,9 @@ const en = {
   gcLogTitle: 'Grind & TDS checks',
   gcRetestTag: 'Re-test',
   gcNoneYet: 'No checks this day',
+  demoMode: 'Training demo',
+  demoModeHint: 'Adds a “Test 5 s” button to each tile: the batch expires in 5 seconds on this device only. Nothing is saved.',
+  demoTest: 'Test 5 s',
 
   resetDone: 'Batch reset',
   cancel: 'Cancel',
@@ -411,6 +414,9 @@ const ar: Strings = {
   gcLogTitle: 'فحوصات الطحن و TDS',
   gcRetestTag: 'إعادة',
   gcNoneYet: 'لا توجد فحوصات في هذا اليوم',
+  demoMode: 'وضع التدريب',
+  demoModeHint: 'يضيف زر «اختبار 5 ث» لكل بطاقة: تنتهي الدفعة خلال 5 ثوانٍ على هذا الجهاز فقط. لا يُحفظ شيء.',
+  demoTest: 'اختبار 5 ث',
 
   resetDone: 'تم إلغاء الدفعة',
   cancel: 'إلغاء',

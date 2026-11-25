@@ -196,6 +196,27 @@ function Shell({ store, setStore, batches, setBatches, checks, setChecks, vapid,
   const [resetSheet, setResetSheet] = useState<null | { batches: Batch[]; pick?: string }>(null);
   const [tankSheet, setTankSheet] = useState<null | { view: SlotView }>(null);
   const [grindSheet, setGrindSheet] = useState<null | { bean: Bean }>(null);
+  // Training demo (temporary): make a tile expire in 5 s on this device only. Nothing is sent to the server.
+  const [demo, setDemoState] = useState(() => ls('hm_demo') === '1');
+  const setDemo = (on: boolean) => {
+    setDemoState(on);
+    lsSet('hm_demo', on ? '1' : '0');
+  };
+  const demoExpire = (v: SlotView) => {
+    unlockAudio();
+    const n = nowMs();
+    const target = v.current ?? v.tanks.find((tk) => tk.current && tk.phase !== 'none')?.current;
+    if (target) {
+      setBatches((all) => all.map((x) => (x.id === target.id ? { ...x, r: Math.min(x.r, n), x: n + 5000 } : x)));
+      const next = new Set(acks);
+      next.delete(target.id);
+      setAcks(next);
+    } else {
+      const fake: Batch = { id: 'demo-' + n, s: v.def.slot, t: n - 60000, r: n, x: n + 5000, n: onShift[0] || 'Demo' };
+      setBatches((all) => [...all, fake]);
+    }
+    haptic(10);
+  };
 
   const onShift = useMemo(() => shift.filter((n) => store.staff.includes(n)), [shift, store.staff]);
   const setShift = (names: string[]) => {
@@ -373,6 +394,10 @@ function Shell({ store, setStore, batches, setBatches, checks, setChecks, vapid,
   };
 
   const voidBatch = async (b: Batch) => {
+    if (b.id.startsWith('demo-')) {
+      setBatches((all) => all.filter((x) => x.id !== b.id));
+      return;
+    }
     try {
       await api.void(b.id, dayKey(b.t));
       setBatches((all) => all.map((x) => (x.id === b.id ? { ...x, v: nowMs() } : x)));
@@ -492,6 +517,7 @@ function Shell({ store, setStore, batches, setBatches, checks, setChecks, vapid,
                             now={now}
                             alarming={alarming.some((a) => a.v === v)}
                             multiTank={multiTank(v)}
+                            onDemo={demo ? () => demoExpire(v) : undefined}
                             busy={busySlot === v.def.slot}
                             onPrimary={() => onPrimary(v)}
                             onUndo={() => v.latest && void voidBatch(v.latest)}
@@ -508,7 +534,7 @@ function Shell({ store, setStore, batches, setBatches, checks, setChecks, vapid,
               </div>
               </>
             )}
-            {tab === 'log' && <LogView store={store} fetchDay={(d) => api.log(d)} fetchDays={() => api.logDays()} liveBatches={batches} liveChecks={checks} onAuthError={onAuthError} />}
+            {tab === 'log' && <LogView store={store} fetchDay={(d) => api.log(d)} fetchDays={() => api.logDays()} liveBatches={batches.filter((b) => !b.id.startsWith('demo-'))} liveChecks={checks} onAuthError={onAuthError} />}
             {tab === 'more' && (
               <MoreView
                 store={store}
@@ -517,6 +543,8 @@ function Shell({ store, setStore, batches, setBatches, checks, setChecks, vapid,
                 onSaveStaff={saveStaffList}
                 onSignOut={onSignOut}
                 geoStatus={geo.status}
+                demo={demo}
+                onDemo={setDemo}
               />
             )}
           </motion.div>

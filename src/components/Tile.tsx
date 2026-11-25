@@ -11,13 +11,14 @@ interface Props {
   now: number;
   alarming: boolean;
   multiTank?: boolean;
+  onDemo?: () => void;
   busy: boolean;
   onPrimary: () => void;
   onUndo: () => void;
   onMenu: () => void;
 }
 
-export const Tile = memo(function Tile({ view, now, alarming, multiTank, busy, onPrimary, onUndo, onMenu }: Props) {
+export const Tile = memo(function Tile({ view, now, alarming, multiTank, onDemo, busy, onPrimary, onUndo, onMenu }: Props) {
   const { t } = useI18n();
   const { def, current, phase, latest } = view;
   const { item } = slotLabel(t, def.slot);
@@ -50,6 +51,11 @@ export const Tile = memo(function Tile({ view, now, alarming, multiTank, busy, o
       {phase !== 'none' && <span className="tile-shine" key={phase + (current?.id ?? '')} aria-hidden />}
       <header className="tile-head">
         <h3 className="tile-name">{item}</h3>
+        {onDemo && phase !== 'expired' && (
+          <button className="tile-demo" onClick={onDemo}>
+            ⚡ {t.demoTest}
+          </button>
+        )}
         {canUndo ? (
           <button className="tile-undo" onClick={onUndo} disabled={busy}>
             <IconUndo />

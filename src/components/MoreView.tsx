@@ -35,6 +35,8 @@ export function MoreView({
   vapid,
   awake,
   geoStatus,
+  demo,
+  onDemo,
   onSaveStaff,
   onSignOut,
 }: {
@@ -42,6 +44,8 @@ export function MoreView({
   vapid: string;
   awake: boolean;
   geoStatus: string;
+  demo: boolean;
+  onDemo: (on: boolean) => void;
   onSaveStaff: (names: string[]) => Promise<string[] | null>;
   onSignOut: () => void;
 }) {
@@ -210,6 +214,15 @@ export function MoreView({
             </span>
           </div>
         )}
+        <div className="setting">
+          <span>
+            {t.demoMode}
+            <small className="muted small" style={{ display: 'block' }}>{t.demoModeHint}</small>
+          </span>
+          <button className="switch" role="switch" aria-checked={demo} onClick={() => onDemo(!demo)}>
+            <span className="switch-thumb" />
+          </button>
+        </div>
         <div className="setting">
           <span>{t.install}</span>
           <span className="muted small">{t.installHint}</span>
