@@ -57,6 +57,7 @@ export function countdown(ms: number) {
 }
 export function shortDuration(ms: number, minLabel: string) {
   const m = Math.floor(ms / 60000);
+  if (m < 1) return `<1 ${minLabel}`;
   if (m < 60) return `${m} ${minLabel}`;
   return `${Math.floor(m / 60)}h ${m % 60}${minLabel === 'min' ? 'm' : ' ' + minLabel}`;
 }

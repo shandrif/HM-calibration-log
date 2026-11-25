@@ -70,6 +70,13 @@ Re-tests are saved as new attempts; the latest counts. A failed check never bloc
 Checks are stored in the `checks` table (one row per attempt), shown in the Log and the daily PDF, and summarised in
 admin → *Grind checks* (done %, pass %, problems by type, per store / area manager / ROM / city). Purged after 92 days.
 
+## Machine off (cleaning)
+
+Every tile has a power button. Turning an item off (for cleaning or servicing) asks who, silences its expiry buzzer
+and push alerts (including an alarm already ringing) and shows an "Off" timer; **Turn on** closes the period. Each
+off → on period (item, times, duration, who) is stored in `downtime` (one row), shown in the Log and the daily PDF,
+and purged after 92 days.
+
 ## Waste in coffee weight
 
 All waste is reported as coffee weight (g / kg). Staff still choose litres for thrown drip; it is converted at **1 L = 70 g** (`DRIP_G_PER_L` in `shared/config.ts`). Espresso shots: dose 1 = 18.8 g, dose 2 = 25.8 g.

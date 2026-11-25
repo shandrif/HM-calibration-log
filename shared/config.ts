@@ -162,6 +162,7 @@ export interface StateResponse {
   batches: Batch[]; // today + yesterday (for batches crossing midnight)
   checks: Check[]; // grind & TDS checks for the current and previous shift day
   due?: Bean[]; // beans whose check for the current shift is overdue
+  downs: Down[]; // machine off periods: still open, plus today's and yesterday's
   vapid: string;
 }
 
@@ -251,3 +252,22 @@ export function isValidCheckInput(v: { top?: unknown; mid?: unknown; base?: unkn
 export const fmtTenths = (n: number) => (n / 10).toFixed(1).replace(/\.0$/, '');
 /** "1.45" from hundredths of a percent. */
 export const fmtTds = (n: number) => (n / 100).toFixed(2);
+
+// ---------------------------------------------------------------- machine off (cleaning / maintenance)
+
+/** One off → on period of one item's machine. */
+export interface Down {
+  id: string;
+  s: string; // slot
+  off: number;
+  on?: number; // missing while still off
+  n: string; // who turned it off
+  n2?: string; // who turned it back on
+}
+
+/** The open off period for a slot, if the machine is off now. */
+export const openDown = (downs: Down[] | undefined, slot: string) => downs?.find((d) => d.s === slot && d.on == null);
+
+/** True when the moment `t` falls inside an off period of `slot` (expiries then are silent). */
+export const wasOff = (downs: Down[] | undefined, slot: string, t: number) =>
+  !!downs?.some((d) => d.s === slot && d.off <= t && (d.on == null || d.on >= t));

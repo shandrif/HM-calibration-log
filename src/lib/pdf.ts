@@ -1,11 +1,11 @@
 import { createRoot } from 'react-dom/client';
 import { createElement } from 'react';
-import type { Check, Batch, StoreInfo } from '../../shared/config';
+import type { Check, Batch, Down, StoreInfo } from '../../shared/config';
 import type { Strings } from './i18n';
 import { ReportPages } from '../components/Report';
 
 /** Renders the branded report off-screen, captures each A4 page and assembles a PDF on the device. */
-export async function buildPdf(opts: { t: Strings; lang: 'en' | 'ar'; store: StoreInfo; day: string; batches: Batch[]; checks?: Check[] }): Promise<File> {
+export async function buildPdf(opts: { t: Strings; lang: 'en' | 'ar'; store: StoreInfo; day: string; batches: Batch[]; checks?: Check[]; downs?: Down[] }): Promise<File> {
   const [{ domToJpeg }, { PDFDocument }] = await Promise.all([import('modern-screenshot'), import('pdf-lib')]);
   const host = document.createElement('div');
   host.className = 'pdf-host';

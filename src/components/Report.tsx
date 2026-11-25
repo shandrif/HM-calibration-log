@@ -1,9 +1,9 @@
-import type { Batch, Check, StoreInfo } from '../../shared/config';
+import type { Batch, Check, Down, StoreInfo } from '../../shared/config';
 import { formatDose, formatGrams, thrownTenths, dripTenths, tanksFor, fmtTds, fmtTenths } from '../../shared/config';
 import type { Strings } from '../lib/i18n';
 import { slotLabel } from '../lib/i18n';
 import { batchOutcome, discardByBean } from '../lib/board';
-import { clock, formatDay, dayKey } from '../lib/time';
+import { clock, formatDay, dayKey, shortDuration } from '../lib/time';
 import { Logo } from './Logo';
 import { Grams } from './Grams';
 
@@ -14,9 +14,9 @@ const ROW_H = 30;
 const FIRST_PAGE_ROWS = 20;
 const PAGE_ROWS = 30;
 
-type Line = { kind: 'section'; title: string; count: number } | { kind: 'row'; b: Batch } | { kind: 'check'; c: Check; retest: boolean } | { kind: 'checkHead' };
+type Line = { kind: 'section'; title: string; count: number } | { kind: 'row'; b: Batch } | { kind: 'check'; c: Check; retest: boolean } | { kind: 'checkHead' } | { kind: 'downHead' } | { kind: 'down'; d: Down };
 
-export function buildLines(t: Strings, batches: Batch[], checks: Check[] = []): Line[] {
+export function buildLines(t: Strings, batches: Batch[], checks: Check[] = [], downs: Down[] = []): Line[] {
   const groups: [string, string[]][] = [
     [t.espresso, ['espresso_hot', 'espresso_cold', 'espresso']],
     [t.hot_drip, ['hot_drip:ethiopian', 'hot_drip:brazilian']],
@@ -37,6 +37,11 @@ export function buildLines(t: Strings, batches: Batch[], checks: Check[] = []): 
       lines.push({ kind: 'check', c, retest: seen.has(c.sh + c.b) });
       seen.add(c.sh + c.b);
     }
+  }
+  if (downs.length) {
+    lines.push({ kind: 'section', title: t.machineOff, count: downs.length });
+    lines.push({ kind: 'downHead' });
+    [...downs].sort((a, b) => a.off - b.off).forEach((d) => lines.push({ kind: 'down', d }));
   }
   return lines;
 }
@@ -64,6 +69,7 @@ export function ReportPages({
   day,
   batches,
   checks = [],
+  downs = [],
   generatedAt,
 }: {
   t: Strings;
@@ -72,9 +78,10 @@ export function ReportPages({
   day: string;
   batches: Batch[];
   checks?: Check[];
+  downs?: Down[];
   generatedAt: number;
 }) {
-  const lines = buildLines(t, batches, checks);
+  const lines = buildLines(t, batches, checks, downs);
   const pages = paginate(lines);
   const live = batches.filter((b) => !b.v);
   const expired = live.filter((b) => batchOutcome(b, batches, generatedAt) === 'expired').length;
@@ -147,6 +154,29 @@ export function ReportPages({
                   <span>TDS</span>
                   <span>{t.by}</span>
                   <span>{t.status}</span>
+                </div>
+              ) : l.kind === 'downHead' ? (
+                <div className="pdf-crow pdf-row-head" key={i} style={{ height: ROW_H }}>
+                  <span>{t.offAt}</span>
+                  <span>{t.item}</span>
+                  <span>{t.onAt}</span>
+                  <span>{t.offFor}</span>
+                  <span>{t.by}</span>
+                  <span />
+                </div>
+              ) : l.kind === 'down' ? (
+                <div className="pdf-crow" key={i} style={{ height: ROW_H }}>
+                  <span dir="ltr">{clock(l.d.off)}</span>
+                  <span>
+                    {slotLabel(t, l.d.s).group} · {slotLabel(t, l.d.s).item}
+                  </span>
+                  <span dir="ltr">{l.d.on != null ? clock(l.d.on) : t.stillOff}</span>
+                  <span>{shortDuration((l.d.on ?? generatedAt) - l.d.off, t.min)}</span>
+                  <span>
+                    {l.d.n}
+                    {l.d.n2 && l.d.n2 !== l.d.n ? ` → ${l.d.n2}` : ''}
+                  </span>
+                  <span />
                 </div>
               ) : l.kind === 'check' ? (
                 <CheckRow key={i} t={t} c={l.c} retest={l.retest} />

@@ -29,6 +29,7 @@ import {
   GRIND_BEANS,
   CHECK_GRACE_MS,
   CHECKS_SINCE_MS,
+  type Down,
 } from '../shared/config';
 import { signToken, verifyToken, hashPin, randomId, safeEqual } from './lib/crypto';
 import { checkGeofence, type Fix } from './lib/geo';
@@ -164,6 +165,22 @@ function overdueBeans(checks: Check[], now: number, tzMin: number): Bean[] {
   return GRIND_BEANS.filter((b) => !checks.some((c) => c.sd === cur.day && c.sh === cur.sh && c.b === b));
 }
 
+// ---------------------------------------------------------------- machine off periods
+
+type DownRow = { id: string; slot: string; off_at: number; on_at: number | null; by_off: string; by_on: string };
+const toDown = (r: DownRow): Down => ({ id: r.id, s: r.slot, off: r.off_at, ...(r.on_at != null ? { on: r.on_at, n2: r.by_on } : {}), n: r.by_off });
+
+/** Off periods that are still open, plus everything from the given days. */
+async function downsFor(env: Env, storeId: number, days: string[]): Promise<Down[]> {
+  const { results } = await env.DB.prepare(
+    `SELECT id, slot, off_at, on_at, by_off, by_on FROM downtime
+     WHERE store_id = ?1 AND (on_at IS NULL OR day IN (${days.map((_, i) => `?${i + 2}`).join(',')})) ORDER BY off_at`,
+  )
+    .bind(storeId, ...days)
+    .all<DownRow>();
+  return results.map(toDown);
+}
+
 function todayAndYesterday(env: Env, now: number) {
   return [dayKey(now, tz(env)), dayKey(now - 24 * 3600 * 1000, tz(env))];
 }
@@ -218,12 +235,14 @@ app.get('/api/state', requireStore, async (c) => {
   const store = c.get('store');
   const now = Date.now();
   const sd = shiftOf(now, tz(c.env)).day;
-  const [batches, checks] = await Promise.all([batchesFor(c.env, store.id, todayAndYesterday(c.env, now)), checksFor(c.env, store.id, [sd, prevDayKey(sd)])]);
+  const days = todayAndYesterday(c.env, now);
+  const [batches, checks, downs] = await Promise.all([batchesFor(c.env, store.id, days), checksFor(c.env, store.id, [sd, prevDayKey(sd)]), downsFor(c.env, store.id, days)]);
   return c.json({
     now,
     store: storeInfo(store),
     batches,
     checks,
+    downs,
     due: overdueBeans(checks, now, tz(c.env)),
     vapid: c.env.VAPID_PUBLIC_KEY || '',
   } satisfies StateResponse);
@@ -366,8 +385,55 @@ app.get('/api/log', requireStore, async (c) => {
   const store = c.get('store');
   const day = c.req.query('day') ?? dayKey(Date.now(), tz(c.env));
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return err(c, 400, 'bad_day');
-  const [batches, checks] = await Promise.all([batchesFor(c.env, store.id, [day]), checksFor(c.env, store.id, [day])]);
-  return c.json({ day, store: storeInfo(store), batches, checks });
+  const [batches, checks, downs] = await Promise.all([batchesFor(c.env, store.id, [day]), checksFor(c.env, store.id, [day]), dayDowns(c.env, store.id, day)]);
+  return c.json({ day, store: storeInfo(store), batches, checks, downs });
+});
+
+async function dayDowns(env: Env, storeId: number, day: string) {
+  const { results } = await env.DB.prepare('SELECT id, slot, off_at, on_at, by_off, by_on FROM downtime WHERE store_id = ?1 AND day = ?2 ORDER BY off_at')
+    .bind(storeId, day)
+    .all<DownRow>();
+  return results.map(toDown);
+}
+
+/** Turn an item's machine off (cleaning / maintenance): one row written. Its alarms stay silent until it is turned on. */
+app.post('/api/downtime', requireStore, async (c) => {
+  const store = c.get('store');
+  const body = await readBody<{ slot?: string; staff?: string; fix?: unknown }>(c);
+  const def = slotDef(String(body.slot));
+  if (!def) return err(c, 400, 'bad_slot');
+  const staff = String(body.staff ?? '').trim().slice(0, 40);
+  if (!staff) return err(c, 400, 'no_staff');
+  const geo = checkGeofence(store, parseFix(body.fix));
+  if (!geo.ok) return err(c, 403, geo.reason, { distance: geo.distance });
+  const open = await c.env.DB.prepare('SELECT id, slot, off_at, on_at, by_off, by_on FROM downtime WHERE store_id = ?1 AND slot = ?2 AND on_at IS NULL')
+    .bind(store.id, def.slot)
+    .first<DownRow>();
+  const now = Date.now();
+  if (open) return c.json({ now, down: toDown(open) }); // already off
+  const row: DownRow = { id: randomId(), slot: def.slot, off_at: now, on_at: null, by_off: staff, by_on: '' };
+  await c.env.DB.prepare('INSERT INTO downtime (id, store_id, day, slot, off_at, by_off) VALUES (?1, ?2, ?3, ?4, ?5, ?6)')
+    .bind(row.id, store.id, dayKey(now, tz(c.env)), row.slot, now, staff)
+    .run();
+  return c.json({ now, down: toDown(row) });
+});
+
+/** Turn it back on: closes the off period (one row updated). */
+app.post('/api/downtime/:id/on', requireStore, async (c) => {
+  const store = c.get('store');
+  const body = await readBody<{ staff?: string; fix?: unknown }>(c);
+  const staff = String(body.staff ?? '').trim().slice(0, 40);
+  if (!staff) return err(c, 400, 'no_staff');
+  const geo = checkGeofence(store, parseFix(body.fix));
+  if (!geo.ok) return err(c, 403, geo.reason, { distance: geo.distance });
+  const now = Date.now();
+  const row = await c.env.DB.prepare(
+    'UPDATE downtime SET on_at = ?1, by_on = ?2 WHERE id = ?3 AND store_id = ?4 AND on_at IS NULL RETURNING id, slot, off_at, on_at, by_off, by_on',
+  )
+    .bind(now, staff, c.req.param('id'), store.id)
+    .first<DownRow>();
+  if (!row) return err(c, 404, 'not_found');
+  return c.json({ now, down: toDown(row) });
 });
 
 /** Save one grind & TDS check attempt: one row written. */
@@ -603,8 +669,8 @@ app.get('/api/admin/log', requireAdmin, async (c) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return err(c, 400, 'bad_day');
   const store = await c.env.DB.prepare('SELECT * FROM stores WHERE id = ?1').bind(id).first<StoreRow>();
   if (!store) return err(c, 404, 'not_found');
-  const [batches, checks] = await Promise.all([batchesFor(c.env, id, [day]), checksFor(c.env, id, [day])]);
-  return c.json({ day, store: storeInfo(store), batches, checks });
+  const [batches, checks, downs] = await Promise.all([batchesFor(c.env, id, [day]), checksFor(c.env, id, [day]), dayDowns(c.env, id, day)]);
+  return c.json({ day, store: storeInfo(store), batches, checks, downs });
 });
 
 /** Give stores a new random 6-digit PIN. Returns the PINs once (they are stored hashed). */
@@ -786,7 +852,11 @@ async function sendExpiryPushes(env: Env, scheduled: number) {
          WHERE json_extract(k.value, '$.s') = json_extract(j.value, '$.s')
            AND COALESCE(json_extract(k.value, '$.k'), 1) = COALESCE(json_extract(j.value, '$.k'), 1)
            AND json_extract(k.value, '$.t') > json_extract(j.value, '$.t')
-           AND json_extract(k.value, '$.v') IS NULL)`,
+           AND json_extract(k.value, '$.v') IS NULL)
+       AND NOT EXISTS (
+         SELECT 1 FROM downtime o
+         WHERE o.store_id = d.store_id AND o.slot = json_extract(j.value, '$.s')
+           AND o.off_at <= json_extract(j.value, '$.x') AND (o.on_at IS NULL OR o.on_at >= json_extract(j.value, '$.x')))`,
   )
     .bind(today, yesterday, start, end)
     .all<{ sid: number }>();
@@ -911,6 +981,7 @@ async function nightly(env: Env) {
     env.DB.prepare('DELETE FROM stats_daily WHERE day < ?1').bind(cutoff),
     env.DB.prepare('DELETE FROM batch_daily WHERE day < ?1').bind(cutoff),
     env.DB.prepare('DELETE FROM checks WHERE sd < ?1').bind(cutoff),
+    env.DB.prepare('DELETE FROM downtime WHERE day < ?1 AND on_at IS NOT NULL').bind(cutoff),
   ]);
 }
 

@@ -1,4 +1,4 @@
-import type { Batch, Check, ShiftKey, StateResponse, StoreInfo } from '../../shared/config';
+import type { Batch, Check, Down, ShiftKey, StateResponse, StoreInfo } from '../../shared/config';
 
 export class ApiError extends Error {
   constructor(
@@ -27,7 +27,7 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
   return data as T;
 }
 
-export type LogResponse = { day: string; store: StoreInfo; batches: Batch[]; checks?: Check[] };
+export type LogResponse = { day: string; store: StoreInfo; batches: Batch[]; checks?: Check[]; downs?: Down[] };
 
 export interface ChecksRow {
   sid: number;
@@ -66,6 +66,8 @@ export const api = {
   log: (day: string) => req<LogResponse>('GET', `/api/log?day=${day}`),
   saveCheck: (body: { sh: ShiftKey; bean: string; top: number; mid: number; base: number; tds: number; staff: string; fix: Fix }) =>
     req<{ now: number; check: Check }>('POST', '/api/checks', body),
+  machineOff: (slot: string, staff: string, fix: Fix) => req<{ now: number; down: Down }>('POST', '/api/downtime', { slot, staff, fix }),
+  machineOn: (id: string, staff: string, fix: Fix) => req<{ now: number; down: Down }>('POST', `/api/downtime/${id}/on`, { staff, fix }),
   logDays: () => req<{ days: Record<string, number> }>('GET', '/api/log/days'),
   subscribe: (sub: PushSubscriptionJSON) => req('POST', '/api/push/subscribe', sub),
   unsubscribe: (endpoint: string) => req('POST', '/api/push/unsubscribe', { endpoint }),

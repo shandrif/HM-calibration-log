@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { toast } from 'sonner';
-import { type Batch, type Check, type Bean, type StoreInfo, type BeanKey, slotsFor, DISCARD_QUICK_ML, MAX_THROWN, DOSE_TENTHS_G, thrownTenths, beanOf, BEAN_KEYS, normalizeBatch, dripTenths, tanksFor } from '../shared/config';
+import { type Batch, type Check, type Bean, type Down, openDown, wasOff, type StoreInfo, type BeanKey, slotsFor, DISCARD_QUICK_ML, MAX_THROWN, DOSE_TENTHS_G, thrownTenths, beanOf, BEAN_KEYS, normalizeBatch, dripTenths, tanksFor } from '../shared/config';
 import { api, ApiError } from './lib/api';
 import { useI18n, fmt, slotLabel } from './lib/i18n';
-import { useNow, setServerNow, nowMs, clock, dayKey, countdown } from './lib/time';
+import { useNow, setServerNow, nowMs, clock, dayKey, countdown, shortDuration } from './lib/time';
 import { useGeo, formatDistance } from './lib/geo';
 import { useWakeLock } from './lib/wakelock';
 import { unlockAudio, startAlarm, stopAlarm, chime, onSoundBlocked, resumeAlarmIfNeeded } from './lib/sound';
@@ -36,6 +36,7 @@ export function StoreApp() {
   const [store, setStore] = useState<StoreInfo | null>(null);
   const [batches, setBatches] = useState<Batch[]>([]);
   const [checks, setChecks] = useState<Check[]>([]);
+  const [downs, setDowns] = useState<Down[]>([]);
   const [vapid, setVapid] = useState('');
   const [gated, setGated] = useState(false);
   const [tab, setTab] = useState<Tab>('board');
@@ -47,6 +48,7 @@ export function StoreApp() {
       setStore(s.store);
       setBatches(s.batches);
       setChecks(s.checks ?? []);
+      setDowns(s.downs ?? []);
       setVapid(s.vapid);
       setStatus('ready');
     } catch (e) {
@@ -126,6 +128,8 @@ export function StoreApp() {
         setBatches={setBatches}
         checks={checks}
         setChecks={setChecks}
+        downs={downs}
+        setDowns={setDowns}
         vapid={vapid}
         gated={gated}
         tab={tab}
@@ -148,6 +152,8 @@ interface ShellProps {
   setBatches: React.Dispatch<React.SetStateAction<Batch[]>>;
   checks: Check[];
   setChecks: React.Dispatch<React.SetStateAction<Check[]>>;
+  downs: Down[];
+  setDowns: React.Dispatch<React.SetStateAction<Down[]>>;
   vapid: string;
   gated: boolean;
   tab: Tab;
@@ -156,7 +162,7 @@ interface ShellProps {
   onSignOut: () => void;
 }
 
-function Shell({ store, setStore, batches, setBatches, checks, setChecks, vapid, gated, tab, setTab, onAuthError, onSignOut }: ShellProps) {
+function Shell({ store, setStore, batches, setBatches, checks, setChecks, downs, setDowns, vapid, gated, tab, setTab, onAuthError, onSignOut }: ShellProps) {
   const { t, lang, setLang } = useI18n();
   // tab order decides the slide direction (Board → Log → More)
   const [tabDir, setTabDir] = useState<1 | -1>(1);
@@ -241,10 +247,12 @@ function Shell({ store, setStore, batches, setBatches, checks, setChecks, vapid,
     () =>
       views.flatMap((v) =>
         v.tanks
+          // a machine that is off (or was off when the batch ran out) stays silent
           .filter((tk) => tk.phase === 'expired' && tk.current && !acks.has(tk.current.id) && now - tk.current.x < 6 * 3600 * 1000)
+          .filter((tk) => !openDown(downs, v.def.slot) && !wasOff(downs, v.def.slot, tk.current!.x))
           .map((tk) => ({ v, tk })),
       ),
-    [views, acks, now],
+    [views, acks, now, downs],
   );
   // Sound needs a tap before browsers allow it: unlock on every tap anywhere (sign-in, gate, tiles…).
   useEffect(() => {
@@ -338,6 +346,55 @@ function Shell({ store, setStore, batches, setBatches, checks, setChecks, vapid,
     } finally {
       setBusySlot(null);
     }
+  };
+
+  // ---------------------------------------------------------------- machine off / on (cleaning)
+  const [powerSheet, setPowerSheet] = useState<null | { view: SlotView }>(null);
+  const itemName = (slot: string) => {
+    const l = slotLabel(t, slot);
+    return `${l.group} · ${l.item}`;
+  };
+  const onPower = (v: SlotView) => {
+    const open = openDown(downs, v.def.slot);
+    if (!open) return setPowerSheet({ view: v });
+    withStaff(itemName(v.def.slot), async (name) => {
+      setBusySlot(v.def.slot);
+      try {
+        const res = await api.machineOn(open.id, name, geo.fix.current);
+        setServerNow(res.now);
+        setDowns((all) => all.map((d) => (d.id === open.id ? res.down : d)));
+        haptic(15);
+        toast.success(fmt(t.onAgain, { item: itemName(v.def.slot), d: shortDuration(res.down.on! - res.down.off, t.min) }));
+      } catch (e) {
+        handleError(e);
+      } finally {
+        setBusySlot(null);
+      }
+    });
+  };
+  const turnOff = (v: SlotView) => {
+    setPowerSheet(null);
+    // turning a machine off for cleaning also stops any alarm that was already ringing for it
+    const ringing = v.tanks.filter((tk) => tk.phase === 'expired' && tk.current).map((tk) => tk.current!.id);
+    if (ringing.length) {
+      const next = new Set(acks);
+      ringing.forEach((id) => next.add(id));
+      setAcks(next);
+      saveAcks(next);
+    }
+    withStaff(itemName(v.def.slot), async (name) => {
+      setBusySlot(v.def.slot);
+      try {
+        const res = await api.machineOff(v.def.slot, name, geo.fix.current);
+        setServerNow(res.now);
+        setDowns((all) => [...all.filter((d) => d.id !== res.down.id), res.down]);
+        haptic(15);
+      } catch (e) {
+        handleError(e);
+      } finally {
+        setBusySlot(null);
+      }
+    });
   };
 
   // ---------------------------------------------------------------- grind & TDS check
@@ -517,7 +574,9 @@ function Shell({ store, setStore, batches, setBatches, checks, setChecks, vapid,
                             now={now}
                             alarming={alarming.some((a) => a.v === v)}
                             multiTank={multiTank(v)}
-                            onDemo={demo ? () => demoExpire(v) : undefined}
+                            onDemo={demo && !openDown(downs, v.def.slot) ? () => demoExpire(v) : undefined}
+                            off={openDown(downs, v.def.slot)}
+                            onPower={() => onPower(v)}
                             busy={busySlot === v.def.slot}
                             onPrimary={() => onPrimary(v)}
                             onUndo={() => v.latest && void voidBatch(v.latest)}
@@ -534,7 +593,7 @@ function Shell({ store, setStore, batches, setBatches, checks, setChecks, vapid,
               </div>
               </>
             )}
-            {tab === 'log' && <LogView store={store} fetchDay={(d) => api.log(d)} fetchDays={() => api.logDays()} liveBatches={batches.filter((b) => !b.id.startsWith('demo-'))} liveChecks={checks} onAuthError={onAuthError} />}
+            {tab === 'log' && <LogView store={store} fetchDay={(d) => api.log(d)} fetchDays={() => api.logDays()} liveBatches={batches.filter((b) => !b.id.startsWith('demo-'))} liveChecks={checks} liveDowns={downs} onAuthError={onAuthError} />}
             {tab === 'more' && (
               <MoreView
                 store={store}
@@ -729,6 +788,22 @@ function Shell({ store, setStore, batches, setBatches, checks, setChecks, vapid,
         onClose={() => setGrindSheet(null)}
         onSave={saveCheck}
       />
+
+      <Sheet open={!!powerSheet} onOpenChange={(o) => !o && setPowerSheet(null)} title={powerSheet ? fmt(t.offTitle, { item: itemName(powerSheet.view.def.slot) }) : ''}>
+        {powerSheet && (
+          <div className="sheet-body">
+            <p className="sheet-text">{t.offText}</p>
+            <div className="sheet-actions">
+              <button className="btn btn-ghost btn-lg" onClick={() => setPowerSheet(null)}>
+                {t.cancel}
+              </button>
+              <button className="btn btn-primary btn-lg" onClick={() => turnOff(powerSheet.view)}>
+                {t.powerOff}
+              </button>
+            </div>
+          </div>
+        )}
+      </Sheet>
 
       <Sheet open={!!tankSheet} onOpenChange={(o) => !o && setTankSheet(null)} title={t.whichTank}>
         {tankSheet && (

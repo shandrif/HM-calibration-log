@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
-import { type Batch, type Check, type StoreInfo, fmtTds, fmtTenths, formatDose, thrownTenths, slotsFor, dripTenths, tanksFor } from '../../shared/config';
+import { type Batch, type Check, type Down, type StoreInfo, fmtTds, fmtTenths, formatDose, thrownTenths, slotsFor, dripTenths, tanksFor } from '../../shared/config';
 import { Grams } from './Grams';
 import { useI18n, slotLabel, type Strings } from '../lib/i18n';
-import { addDays, clock, dayKey, formatDay, nowMs } from '../lib/time';
+import { addDays, clock, dayKey, formatDay, nowMs, shortDuration } from '../lib/time';
 import { batchOutcome, discardByBean, slotView, tankOf } from '../lib/board';
 import { buildPdf, canShareFile, downloadFile } from '../lib/pdf';
 import { IconChevron, IconDownload, IconShare, IconDrop, IconCalendar } from './Icons';
@@ -18,19 +18,21 @@ export function LogView({
   fetchDays,
   liveBatches,
   liveChecks,
+  liveDowns,
   onAuthError,
 }: {
   store: StoreInfo;
-  fetchDay: (day: string) => Promise<{ batches: Batch[]; checks?: Check[] }>;
+  fetchDay: (day: string) => Promise<{ batches: Batch[]; checks?: Check[]; downs?: Down[] }>;
   fetchDays?: () => Promise<{ days: Record<string, number> }>;
   liveBatches?: Batch[];
   liveChecks?: Check[];
+  liveDowns?: Down[];
   onAuthError?: (e: unknown) => boolean;
 }) {
   const { t, lang } = useI18n();
   const today = dayKey(nowMs());
   const [day, setDay] = useState(today);
-  const [fetched, setFetched] = useState<{ day: string; batches: Batch[]; checks: Check[] } | null>(null);
+  const [fetched, setFetched] = useState<{ day: string; batches: Batch[]; checks: Check[]; downs: Down[] } | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState<'pdf' | 'share' | null>(null);
 
@@ -56,7 +58,7 @@ export function LogView({
   };
 
   // Past days don't change, so each one is fetched once per visit and then served from memory.
-  const cache = useRef(new Map<string, { batches: Batch[]; checks: Check[] }>());
+  const cache = useRef(new Map<string, { batches: Batch[]; checks: Check[]; downs: Down[] }>());
 
   const useLive = !!liveBatches && day === today;
   useEffect(() => {
@@ -71,7 +73,7 @@ export function LogView({
     fetchRef
       .current(day)
       .then((r) => {
-        const v = { batches: r.batches, checks: r.checks ?? [] };
+        const v = { batches: r.batches, checks: r.checks ?? [], downs: r.downs ?? [] };
         cache.current.set(day, v);
         if (!cancelled) setFetched({ day, ...v });
       })
@@ -86,6 +88,7 @@ export function LogView({
 
   const batches = useLive ? liveBatches!.filter((b) => dayKey(b.t) === day) : fetched?.day === day ? fetched.batches : null;
   const checks = useLive ? (liveChecks ?? []).filter((c) => c.sd === day) : fetched?.day === day ? fetched.checks : [];
+  const downs = useLive ? (liveDowns ?? []).filter((d) => dayKey(d.off) === day) : fetched?.day === day ? fetched.downs : [];
   const oldest = addDays(today, -RETENTION + 1);
   const now = nowMs();
 
@@ -94,7 +97,7 @@ export function LogView({
     setBusy(mode);
     const id = toast.loading(t.preparing);
     try {
-      const file = await buildPdf({ t, lang, store, day, batches, checks });
+      const file = await buildPdf({ t, lang, store, day, batches, checks, downs });
       toast.dismiss(id);
       if (mode === 'share' && canShareFile(file)) {
         await navigator.share({ files: [file], title: file.name }).catch(() => {});
@@ -184,6 +187,7 @@ export function LogView({
       <div className="log-main">
         {batches && <LastCalibrations store={store} batches={sorted} day={day} isToday={day === today} now={now} />}
         {batches && <ChecksCard checks={checks} />}
+        {batches && <DownCard downs={downs} now={now} />}
         {!batches ? (
           <div className="skeleton-list">
             {[0, 1, 2, 3].map((i) => (
@@ -437,6 +441,56 @@ function ChecksCard({ checks }: { checks: Check[] }) {
                     {c.ok ? t.gcPassed : t.gcFailTitle}
                   </span>
                   {why && <small className="muted">{why}</small>}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------- machine off periods
+
+function DownCard({ downs, now }: { downs: Down[]; now: number }) {
+  const { t } = useI18n();
+  const rows = [...downs].sort((a, b) => a.off - b.off);
+  const total = rows.reduce((a, d) => a + ((d.on ?? now) - d.off), 0);
+  return (
+    <section className="last-card checks-card" aria-label={t.machineOff}>
+      <div className="last-title">
+        {t.machineOff}
+        {rows.length > 0 && <span className="muted num down-total"> · {shortDuration(total, t.min)}</span>}
+      </div>
+      {rows.length === 0 ? (
+        <p className="muted checks-empty">{t.noDowntime}</p>
+      ) : (
+        <div className="checks-table" role="table">
+          <div className="down-row checks-head" role="row">
+            <span>{t.item}</span>
+            <span>{t.offAt}</span>
+            <span>{t.onAt}</span>
+            <span>{t.offFor}</span>
+            <span>{t.by}</span>
+          </div>
+          {rows.map((d) => {
+            const l = slotLabel(t, d.s);
+            return (
+              <div className="down-row" role="row" key={d.id} data-open={d.on == null || undefined}>
+                <span className="checks-bean">
+                  <span>
+                    <i className={`st-dot st-${STATION_OF(d.s)}`} /> {l.group} · {l.item}
+                  </span>
+                </span>
+                <span className="num">{clock(d.off)}</span>
+                <span className="num">{d.on != null ? clock(d.on) : <b className="down-open">{t.stillOff}</b>}</span>
+                <span className="num">
+                  <b>{shortDuration((d.on ?? now) - d.off, t.min)}</b>
+                </span>
+                <span className="muted">
+                  {d.n}
+                  {d.n2 && d.n2 !== d.n ? ` → ${d.n2}` : ''}
                 </span>
               </div>
             );

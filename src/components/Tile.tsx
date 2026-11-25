@@ -1,10 +1,10 @@
 import { memo } from 'react';
-import { formatDose, UNDO_MS } from '../../shared/config';
+import { formatDose, UNDO_MS, type Down } from '../../shared/config';
 import type { SlotView, TankView } from '../lib/board';
 import { useI18n, slotLabel } from '../lib/i18n';
 import { clock, countdown } from '../lib/time';
 import { Ring } from './Ring';
-import { IconDots, IconUndo } from './Icons';
+import { IconDots, IconPower, IconUndo } from './Icons';
 
 interface Props {
   view: SlotView;
@@ -12,13 +12,15 @@ interface Props {
   alarming: boolean;
   multiTank?: boolean;
   onDemo?: () => void;
+  off?: Down;
+  onPower?: () => void;
   busy: boolean;
   onPrimary: () => void;
   onUndo: () => void;
   onMenu: () => void;
 }
 
-export const Tile = memo(function Tile({ view, now, alarming, multiTank, onDemo, busy, onPrimary, onUndo, onMenu }: Props) {
+export const Tile = memo(function Tile({ view, now, alarming, multiTank, onDemo, off, onPower, busy, onPrimary, onUndo, onMenu }: Props) {
   const { t } = useI18n();
   const { def, current, phase, latest } = view;
   const { item } = slotLabel(t, def.slot);
@@ -45,12 +47,50 @@ export const Tile = memo(function Tile({ view, now, alarming, multiTank, onDemo,
 
   const cta = isEspresso ? (current ? t.recalibrate : t.calibrate) : view.tanks.some((tk) => tk.current) ? t.newBatch : t.start;
 
+  if (off) {
+    return (
+      <article className="tile" data-phase="off" aria-live="off">
+        <header className="tile-head">
+          <h3 className="tile-name">{item}</h3>
+          <span className="tile-off-chip">
+            <IconPower /> {t.offAt}
+          </span>
+        </header>
+        <div className="tile-body">
+          <div className="tile-ring tile-ring-off" aria-hidden>
+            <IconPower />
+          </div>
+          <div className="tile-time">
+            <div className="tile-big num">{countdown(now - off.off)}</div>
+            <div className="tile-caption">{t.machineOffCaption}</div>
+          </div>
+        </div>
+        <div className="tile-meta">
+          <span className="num">
+            {t.offSince} {clock(off.off)}
+          </span>
+          <span className="tile-by">{off.n}</span>
+        </div>
+        <div className="tile-actions">
+          <button className="btn btn-primary tile-cta tile-cta-on" onClick={onPower} disabled={busy} data-busy={busy || undefined}>
+            <IconPower /> {t.powerOn}
+          </button>
+        </div>
+      </article>
+    );
+  }
+
   return (
     <article className="tile" data-phase={phase} data-alarm={alarming || undefined} aria-live="off">
       {/* re-mounts on every state change so the light sweeps across the glass once */}
       {phase !== 'none' && <span className="tile-shine" key={phase + (current?.id ?? '')} aria-hidden />}
       <header className="tile-head">
         <h3 className="tile-name">{item}</h3>
+        {onPower && (
+          <button className="icon-btn tile-power" onClick={onPower} aria-label={t.powerOff} title={t.powerOff}>
+            <IconPower />
+          </button>
+        )}
         {onDemo && phase !== 'expired' && (
           <button className="tile-demo" onClick={onDemo}>
             ⚡ {t.demoTest}

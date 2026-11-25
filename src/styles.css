@@ -5167,3 +5167,111 @@ button.batch-tr:hover {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* ---------------------------------------------------------------- machine off (cleaning) */
+.tile-power {
+  width: 30px;
+  height: 30px;
+  margin-inline-start: auto;
+  color: var(--tile-muted);
+  opacity: 0.75;
+}
+.tile-power svg {
+  width: 17px;
+  height: 17px;
+}
+.tile-head .tile-power + .tile-demo {
+  margin-inline-start: 0;
+}
+.tile[data-phase='off'] {
+  --tile-bg: color-mix(in srgb, var(--ink) 7%, var(--surface));
+  --tile-ink: var(--muted);
+  --tile-muted: var(--muted);
+  background-color: var(--tile-bg);
+  background-image: repeating-linear-gradient(135deg, transparent 0 14px, color-mix(in srgb, var(--ink) 4%, transparent) 14px 28px);
+}
+.tile[data-phase='off'] .tile-name,
+.tile[data-phase='off'] .tile-big {
+  color: var(--muted);
+}
+.tile-off-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--on-accent);
+  font-size: 12px;
+  font-weight: 700;
+}
+.tile-off-chip svg {
+  width: 13px;
+  height: 13px;
+}
+.tile-ring-off {
+  display: grid;
+  place-items: center;
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  border: 3px dashed color-mix(in srgb, var(--muted) 55%, transparent);
+  color: var(--muted);
+}
+.tile-ring-off svg {
+  width: 30px;
+  height: 30px;
+}
+.tile-cta-on {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--teal-deep);
+  color: #fff;
+}
+.down-row {
+  display: grid;
+  grid-template-columns: minmax(130px, 1.6fr) 52px 70px minmax(64px, 0.8fr) minmax(90px, 1.2fr);
+  gap: 10px;
+  align-items: center;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+  font-size: 14px;
+}
+.down-row.checks-head {
+  border-top: 0;
+  padding-top: 4px;
+}
+.down-open {
+  color: var(--red);
+}
+.down-total {
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+}
+@media (max-width: 760px) {
+  .down-row {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+  .down-row > :nth-child(5) {
+    grid-column: 1 / -1;
+    font-size: 12px;
+  }
+  .down-row.checks-head {
+    display: none;
+  }
+}
+@media (min-width: 1000px) and (orientation: landscape) and (min-height: 600px) and (max-height: 880px) {
+  .tile-ring-off {
+    width: 64px;
+    height: 64px;
+  }
+}
+@media (max-width: 699px), (min-width: 700px) and (orientation: portrait) {
+  .tile-ring-off {
+    width: 62px;
+    height: 62px;
+  }
+}
