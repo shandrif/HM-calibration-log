@@ -20,3 +20,5 @@ export const IconPin = () => (<svg {...P}><path d="M12 21s-7-6.2-7-12a7 7 0 0 1 
 export const IconX = () => (<svg {...P}><path d="M18 6 6 18M6 6l12 12" /></svg>);
 export const IconDrop = () => (<svg {...P}><path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z" /></svg>);
 export const IconCalendar = () => (<svg {...P}><rect x="3" y="5" width="18" height="16" rx="3" /><path d="M3 10h18M8 3v4M16 3v4" /></svg>);
+export const IconSieve = () => (<svg {...P}><path d="M4 5h16l-8 15z" /><path d="M7 9h10M9.5 13h5" /></svg>);
+export const IconCheck = () => (<svg {...P}><path d="m5 12 5 5 9-10" /></svg>);

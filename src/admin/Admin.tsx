@@ -9,6 +9,7 @@ import { getFix } from '../lib/geo';
 import { setServerNow, shortDuration } from '../lib/time';
 import type { StoreInfo } from '../../shared/config';
 import { WastePanel } from './Waste';
+import { ChecksPanel } from './Checks';
 import { formatGrams, dripTenths, tanksFor, DEFAULT_TANKS, MAX_TANKS } from '../../shared/config';
 import { BatchesPanel } from './Batches';
 
@@ -20,7 +21,7 @@ export function Admin() {
   const [edit, setEdit] = useState<Partial<AdminStore> | null>(null);
   const [viewing, setViewing] = useState<AdminStore | null>(null);
   const [q, setQ] = useState('');
-  const [tab, setTab] = useState<'stores' | 'waste' | 'batches'>('stores');
+  const [tab, setTab] = useState<'stores' | 'waste' | 'batches' | 'checks'>('stores');
   const [filter, setFilter] = useState({ city: '', rom: '', area_manager: '' });
   const [pinList, setPinList] = useState<{ code: string; name: string; pin: string }[] | null>(null);
 
@@ -103,9 +104,14 @@ export function Admin() {
           <button data-active={tab === 'batches' || undefined} onClick={() => setTab('batches')}>
             Batches
           </button>
+          <button data-active={tab === 'checks' || undefined} onClick={() => setTab('checks')}>
+            Grind checks
+          </button>
         </div>
 
-        {tab === 'batches' ? (
+        {tab === 'checks' ? (
+          <ChecksPanel stores={filtered} today={data.today} filterNote={[filter.city, filter.rom, filter.area_manager, q.trim()].filter(Boolean).join(' · ')} />
+        ) : tab === 'batches' ? (
           <BatchesPanel stores={filtered} today={data.today} />
         ) : tab === 'waste' ? (
           <WastePanel stores={filtered} today={data.today} filterNote={[filter.city, filter.rom, filter.area_manager, q.trim()].filter(Boolean).join(' · ')} />

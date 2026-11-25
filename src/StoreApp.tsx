@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { toast } from 'sonner';
-import { type Batch, type StoreInfo, type BeanKey, slotsFor, DISCARD_QUICK_ML, MAX_THROWN, DOSE_TENTHS_G, thrownTenths, beanOf, BEAN_KEYS, normalizeBatch, dripTenths, tanksFor } from '../shared/config';
+import { type Batch, type Check, type Bean, type StoreInfo, type BeanKey, slotsFor, DISCARD_QUICK_ML, MAX_THROWN, DOSE_TENTHS_G, thrownTenths, beanOf, BEAN_KEYS, normalizeBatch, dripTenths, tanksFor } from '../shared/config';
 import { api, ApiError } from './lib/api';
 import { useI18n, fmt, slotLabel } from './lib/i18n';
 import { useNow, setServerNow, nowMs, clock, dayKey, countdown } from './lib/time';
@@ -18,6 +18,7 @@ import { Logo } from './components/Logo';
 import { IconBoard, IconLog, IconMore, IconBell, IconPlus, IconUser, IconMinus, IconChevron } from './components/Icons';
 import { LoginView } from './components/LoginView';
 import { LogView } from './components/LogView';
+import { GrindCard, GrindSheet, type CheckInput } from './components/GrindCheck';
 import { MoreView } from './components/MoreView';
 
 type Tab = 'board' | 'log' | 'more';
@@ -34,6 +35,7 @@ export function StoreApp() {
   const [status, setStatus] = useState<'loading' | 'signedOut' | 'ready'>('loading');
   const [store, setStore] = useState<StoreInfo | null>(null);
   const [batches, setBatches] = useState<Batch[]>([]);
+  const [checks, setChecks] = useState<Check[]>([]);
   const [vapid, setVapid] = useState('');
   const [gated, setGated] = useState(false);
   const [tab, setTab] = useState<Tab>('board');
@@ -44,6 +46,7 @@ export function StoreApp() {
       setServerNow(s.now);
       setStore(s.store);
       setBatches(s.batches);
+      setChecks(s.checks ?? []);
       setVapid(s.vapid);
       setStatus('ready');
     } catch (e) {
@@ -121,6 +124,8 @@ export function StoreApp() {
         setStore={setStore}
         batches={batches}
         setBatches={setBatches}
+        checks={checks}
+        setChecks={setChecks}
         vapid={vapid}
         gated={gated}
         tab={tab}
@@ -141,6 +146,8 @@ interface ShellProps {
   setStore: (s: StoreInfo) => void;
   batches: Batch[];
   setBatches: React.Dispatch<React.SetStateAction<Batch[]>>;
+  checks: Check[];
+  setChecks: React.Dispatch<React.SetStateAction<Check[]>>;
   vapid: string;
   gated: boolean;
   tab: Tab;
@@ -149,7 +156,7 @@ interface ShellProps {
   onSignOut: () => void;
 }
 
-function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab, onAuthError, onSignOut }: ShellProps) {
+function Shell({ store, setStore, batches, setBatches, checks, setChecks, vapid, gated, tab, setTab, onAuthError, onSignOut }: ShellProps) {
   const { t, lang, setLang } = useI18n();
   // tab order decides the slide direction (Board → Log → More)
   const [tabDir, setTabDir] = useState<1 | -1>(1);
@@ -188,6 +195,7 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
   const [discardSheet, setDiscardSheet] = useState<null | { id: string; day: string; label: string }>(null);
   const [resetSheet, setResetSheet] = useState<null | { batches: Batch[]; pick?: string }>(null);
   const [tankSheet, setTankSheet] = useState<null | { view: SlotView }>(null);
+  const [grindSheet, setGrindSheet] = useState<null | { bean: Bean }>(null);
 
   const onShift = useMemo(() => shift.filter((n) => store.staff.includes(n)), [shift, store.staff]);
   const setShift = (names: string[]) => {
@@ -308,6 +316,21 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
       handleError(e);
     } finally {
       setBusySlot(null);
+    }
+  };
+
+  // ---------------------------------------------------------------- grind & TDS check
+  const saveCheck = async (v: CheckInput): Promise<Check | null> => {
+    try {
+      setLastBy(v.staff);
+      const res = await api.saveCheck({ ...v, fix: geo.fix.current });
+      setServerNow(res.now);
+      setChecks((c) => [...c, res.check]);
+      haptic(res.check.ok ? 15 : 60);
+      return res.check;
+    } catch (e) {
+      handleError(e);
+      return null;
     }
   };
 
@@ -444,6 +467,7 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
             {tab === 'board' && (
               <>
               <BeanStrip beans={store.beans ?? {}} onPick={(bean) => setBeanSheet({ bean })} />
+              <GrindCard checks={checks} now={now} onStart={(bean) => setGrindSheet({ bean })} />
               <div className="board">
                 {groups.map((g, gi) => {
                   const vs = views.filter((v) => v.def.group === g.key);
@@ -484,7 +508,7 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
               </div>
               </>
             )}
-            {tab === 'log' && <LogView store={store} fetchDay={(d) => api.log(d)} fetchDays={() => api.logDays()} liveBatches={batches} onAuthError={onAuthError} />}
+            {tab === 'log' && <LogView store={store} fetchDay={(d) => api.log(d)} fetchDays={() => api.logDays()} liveBatches={batches} liveChecks={checks} onAuthError={onAuthError} />}
             {tab === 'more' && (
               <MoreView
                 store={store}
@@ -666,6 +690,16 @@ function Shell({ store, setStore, batches, setBatches, vapid, gated, tab, setTab
             handleError(e);
           }
         }}
+      />
+
+      <GrindSheet
+        open={!!grindSheet}
+        bean={grindSheet?.bean ?? 'ethiopian'}
+        now={now}
+        people={onShift}
+        defaultPerson={onShift.length === 1 ? onShift[0] : lastBy && onShift.includes(lastBy) ? lastBy : ''}
+        onClose={() => setGrindSheet(null)}
+        onSave={saveCheck}
       />
 
       <Sheet open={!!tankSheet} onOpenChange={(o) => !o && setTankSheet(null)} title={t.whichTank}>

@@ -1,5 +1,5 @@
-import type { Batch, StoreInfo } from '../../shared/config';
-import { formatDose, formatGrams, thrownTenths, dripTenths, tanksFor } from '../../shared/config';
+import type { Batch, Check, StoreInfo } from '../../shared/config';
+import { formatDose, formatGrams, thrownTenths, dripTenths, tanksFor, fmtTds, fmtTenths } from '../../shared/config';
 import type { Strings } from '../lib/i18n';
 import { slotLabel } from '../lib/i18n';
 import { batchOutcome, discardByBean } from '../lib/board';
@@ -14,9 +14,9 @@ const ROW_H = 30;
 const FIRST_PAGE_ROWS = 20;
 const PAGE_ROWS = 30;
 
-type Line = { kind: 'section'; title: string; count: number } | { kind: 'row'; b: Batch };
+type Line = { kind: 'section'; title: string; count: number } | { kind: 'row'; b: Batch } | { kind: 'check'; c: Check; retest: boolean } | { kind: 'checkHead' };
 
-export function buildLines(t: Strings, batches: Batch[]): Line[] {
+export function buildLines(t: Strings, batches: Batch[], checks: Check[] = []): Line[] {
   const groups: [string, string[]][] = [
     [t.espresso, ['espresso_hot', 'espresso_cold', 'espresso']],
     [t.hot_drip, ['hot_drip:ethiopian', 'hot_drip:brazilian']],
@@ -27,6 +27,16 @@ export function buildLines(t: Strings, batches: Batch[]): Line[] {
     const rows = batches.filter((b) => slots.includes(b.s)).sort((a, b) => a.t - b.t);
     lines.push({ kind: 'section', title, count: rows.filter((r) => !r.v).length });
     rows.forEach((b) => lines.push({ kind: 'row', b }));
+  }
+  if (checks.length) {
+    const rows = [...checks].sort((a, b) => a.at - b.at);
+    lines.push({ kind: 'section', title: t.gcLogTitle, count: new Set(rows.map((c) => c.sh + c.b)).size });
+    lines.push({ kind: 'checkHead' });
+    const seen = new Set<string>();
+    for (const c of rows) {
+      lines.push({ kind: 'check', c, retest: seen.has(c.sh + c.b) });
+      seen.add(c.sh + c.b);
+    }
   }
   return lines;
 }
@@ -47,8 +57,24 @@ export function paginate(lines: Line[]): Line[][] {
   return pages;
 }
 
-export function ReportPages({ t, lang, store, day, batches, generatedAt }: { t: Strings; lang: 'en' | 'ar'; store: StoreInfo; day: string; batches: Batch[]; generatedAt: number }) {
-  const lines = buildLines(t, batches);
+export function ReportPages({
+  t,
+  lang,
+  store,
+  day,
+  batches,
+  checks = [],
+  generatedAt,
+}: {
+  t: Strings;
+  lang: 'en' | 'ar';
+  store: StoreInfo;
+  day: string;
+  batches: Batch[];
+  checks?: Check[];
+  generatedAt: number;
+}) {
+  const lines = buildLines(t, batches, checks);
   const pages = paginate(lines);
   const live = batches.filter((b) => !b.v);
   const expired = live.filter((b) => batchOutcome(b, batches, generatedAt) === 'expired').length;
@@ -113,6 +139,17 @@ export function ReportPages({ t, lang, store, day, batches, generatedAt }: { t: 
                   <span>{l.title}</span>
                   <span className="pdf-count">{l.count}</span>
                 </div>
+              ) : l.kind === 'checkHead' ? (
+                <div className="pdf-crow pdf-row-head" key={i} style={{ height: ROW_H }}>
+                  <span>{t.time}</span>
+                  <span>{t.shiftLabel} · {t.item}</span>
+                  <span>{t.gcTop} · {t.gcMid} · {t.gcBase}</span>
+                  <span>TDS</span>
+                  <span>{t.by}</span>
+                  <span>{t.status}</span>
+                </div>
+              ) : l.kind === 'check' ? (
+                <CheckRow key={i} t={t} c={l.c} retest={l.retest} />
               ) : (
                 <Row key={i} t={t} b={l.b} all={batches} now={generatedAt} tanks={store.tanks} />
               ),
@@ -129,6 +166,25 @@ export function ReportPages({ t, lang, store, day, batches, generatedAt }: { t: 
         </div>
       ))}
     </>
+  );
+}
+
+function CheckRow({ t, c, retest }: { t: Strings; c: Check; retest: boolean }) {
+  const why = [c.g !== 'ok' ? t[`gcG_${c.g}`] : '', c.r !== 'ok' ? t[`gcR_${c.r}`].split(' — ')[0] : ''].filter(Boolean).join(' · ');
+  return (
+    <div className="pdf-crow" data-ok={c.ok ? true : undefined} style={{ height: ROW_H }}>
+      <span dir="ltr">{clock(c.at)}</span>
+      <span>
+        {c.sh === 'm' ? t.shiftM : t.shiftE} · {t[c.b]}
+        {retest ? ` · ${t.gcRetestTag}` : ''}
+      </span>
+      <span dir="ltr">
+        {fmtTenths(c.top)} · {fmtTenths(c.mid)} · {fmtTenths(c.base)} g
+      </span>
+      <span dir="ltr">{fmtTds(c.tds)}%</span>
+      <span>{c.n}</span>
+      <span className="c-status">{c.ok ? t.gcPassed : why}</span>
+    </div>
   );
 }
 

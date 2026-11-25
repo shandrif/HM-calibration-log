@@ -1,4 +1,4 @@
-import type { Batch, StateResponse, StoreInfo } from '../../shared/config';
+import type { Batch, Check, ShiftKey, StateResponse, StoreInfo } from '../../shared/config';
 
 export class ApiError extends Error {
   constructor(
@@ -27,6 +27,29 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
   return data as T;
 }
 
+export type LogResponse = { day: string; store: StoreInfo; batches: Batch[]; checks?: Check[] };
+
+export interface ChecksRow {
+  sid: number;
+  done: number;
+  passed: number;
+  failing: number;
+  failed_first: number;
+  coarse: number;
+  fine: number;
+  uneven: number;
+  low: number;
+  high: number;
+  retested: number;
+}
+export interface ChecksResponse {
+  from: string;
+  to: string;
+  today: string;
+  expected: number;
+  rows: ChecksRow[];
+}
+
 export type Fix = { lat: number; lng: number; acc: number } | undefined;
 
 export const api = {
@@ -39,7 +62,9 @@ export const api = {
   discard: (id: string, day: string, ml: number) => req('POST', `/api/batches/${id}/discard`, { day, ml }),
   staff: (names: string[]) => req<{ staff: string[] }>('PUT', '/api/staff', { names }),
   setBean: (bean: string, batch: string, by: string) => req<{ beans: StoreInfo['beans'] }>('PUT', '/api/beans', { bean, batch, by }),
-  log: (day: string) => req<{ day: string; store: StoreInfo; batches: Batch[] }>('GET', `/api/log?day=${day}`),
+  log: (day: string) => req<LogResponse>('GET', `/api/log?day=${day}`),
+  saveCheck: (body: { sh: ShiftKey; bean: string; top: number; mid: number; base: number; tds: number; staff: string; fix: Fix }) =>
+    req<{ now: number; check: Check }>('POST', '/api/checks', body),
   logDays: () => req<{ days: Record<string, number> }>('GET', '/api/log/days'),
   subscribe: (sub: PushSubscriptionJSON) => req('POST', '/api/push/subscribe', sub),
   unsubscribe: (endpoint: string) => req('POST', '/api/push/unsubscribe', { endpoint }),
@@ -52,7 +77,8 @@ export const adminApi = {
   overview: () => req<AdminOverview>('GET', '/api/admin/overview'),
   createStore: (s: StoreBody & { pin: string }) => req<{ id: number }>('POST', '/api/admin/stores', s),
   updateStore: (id: number, s: StoreBody & { pin?: string }) => req('PUT', `/api/admin/stores/${id}`, s),
-  log: (store: number, day: string) => req<{ day: string; store: StoreInfo; batches: Batch[] }>('GET', `/api/admin/log?store=${store}&day=${day}`),
+  log: (store: number, day: string) => req<LogResponse>('GET', `/api/admin/log?store=${store}&day=${day}`),
+  checks: (from: string, to: string) => req<ChecksResponse>('GET', `/api/admin/checks?from=${from}&to=${to}`),
   logDays: (store: number) => req<{ days: Record<string, number> }>('GET', `/api/admin/log/days?store=${store}`),
   refreshUsage: () => req('POST', '/api/admin/usage/refresh'),
   waste: (from: string, to: string) => req<WasteResponse>('GET', `/api/admin/waste?from=${from}&to=${to}`),

@@ -19,6 +19,16 @@ import {
   type BeanBatch,
   dayKey,
   GEOFENCE_DEFAULT_M,
+  type Check,
+  type Bean,
+  type ShiftKey,
+  shiftOf,
+  diagnoseGrind,
+  diagnoseTds,
+  isValidCheckInput,
+  GRIND_BEANS,
+  CHECK_GRACE_MS,
+  CHECKS_SINCE_MS,
 } from '../shared/config';
 import { signToken, verifyToken, hashPin, randomId, safeEqual } from './lib/crypto';
 import { checkGeofence, type Fix } from './lib/geo';
@@ -124,6 +134,36 @@ async function batchesFor(env: Env, storeId: number, days: string[]): Promise<Ba
   return results.flatMap((r) => safeJson<Batch[]>(r.batches, [])).sort((a, b) => a.t - b.t);
 }
 
+// ---------------------------------------------------------------- grind & TDS checks
+
+type CheckRow = { id: string; sd: string; sh: string; bean: string; top: number; mid: number; base: number; tds: number; g: string; r: string; ok: number; by: string; at: number };
+const toCheck = (r: CheckRow): Check => ({
+  id: r.id, sd: r.sd, sh: r.sh as ShiftKey, b: r.bean as Bean, top: r.top, mid: r.mid, base: r.base, tds: r.tds,
+  g: r.g as Check['g'], r: r.r as Check['r'], ok: r.ok ? 1 : 0, n: r.by, at: r.at,
+});
+
+async function checksFor(env: Env, storeId: number, days: string[]): Promise<Check[]> {
+  const { results } = await env.DB.prepare(
+    `SELECT * FROM checks WHERE store_id = ?1 AND sd IN (${days.map((_, i) => `?${i + 2}`).join(',')}) ORDER BY at`,
+  )
+    .bind(storeId, ...days)
+    .all<CheckRow>();
+  return results.map(toCheck);
+}
+
+function prevDayKey(day: string) {
+  const d = new Date(day + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Beans whose check for the current shift is overdue (shift started more than an hour ago, no attempt yet). */
+function overdueBeans(checks: Check[], now: number, tzMin: number): Bean[] {
+  const cur = shiftOf(now, tzMin);
+  if (now - cur.start < CHECK_GRACE_MS || cur.start < CHECKS_SINCE_MS) return [];
+  return GRIND_BEANS.filter((b) => !checks.some((c) => c.sd === cur.day && c.sh === cur.sh && c.b === b));
+}
+
 function todayAndYesterday(env: Env, now: number) {
   return [dayKey(now, tz(env)), dayKey(now - 24 * 3600 * 1000, tz(env))];
 }
@@ -177,8 +217,16 @@ app.post('/api/logout', (c) => {
 app.get('/api/state', requireStore, async (c) => {
   const store = c.get('store');
   const now = Date.now();
-  const batches = await batchesFor(c.env, store.id, todayAndYesterday(c.env, now));
-  return c.json({ now, store: storeInfo(store), batches, vapid: c.env.VAPID_PUBLIC_KEY || '' } satisfies StateResponse);
+  const sd = shiftOf(now, tz(c.env)).day;
+  const [batches, checks] = await Promise.all([batchesFor(c.env, store.id, todayAndYesterday(c.env, now)), checksFor(c.env, store.id, [sd, prevDayKey(sd)])]);
+  return c.json({
+    now,
+    store: storeInfo(store),
+    batches,
+    checks,
+    due: overdueBeans(checks, now, tz(c.env)),
+    vapid: c.env.VAPID_PUBLIC_KEY || '',
+  } satisfies StateResponse);
 });
 
 /** Start a batch: one row written. */
@@ -318,7 +366,34 @@ app.get('/api/log', requireStore, async (c) => {
   const store = c.get('store');
   const day = c.req.query('day') ?? dayKey(Date.now(), tz(c.env));
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return err(c, 400, 'bad_day');
-  return c.json({ day, store: storeInfo(store), batches: await batchesFor(c.env, store.id, [day]) });
+  const [batches, checks] = await Promise.all([batchesFor(c.env, store.id, [day]), checksFor(c.env, store.id, [day])]);
+  return c.json({ day, store: storeInfo(store), batches, checks });
+});
+
+/** Save one grind & TDS check attempt: one row written. */
+app.post('/api/checks', requireStore, async (c) => {
+  const store = c.get('store');
+  const body = await readBody<{ sh?: string; bean?: string; top?: number; mid?: number; base?: number; tds?: number; staff?: string; fix?: unknown }>(c);
+  if (body.sh !== 'm' && body.sh !== 'e') return err(c, 400, 'bad_shift');
+  if (!GRIND_BEANS.includes(body.bean as Bean)) return err(c, 400, 'bad_bean');
+  if (!isValidCheckInput(body)) return err(c, 400, 'bad_check');
+  const staff = String(body.staff ?? '').trim().slice(0, 40);
+  if (!staff) return err(c, 400, 'no_staff');
+  const geo = checkGeofence(store, parseFix(body.fix));
+  if (!geo.ok) return err(c, 403, geo.reason, { distance: geo.distance });
+  const now = Date.now();
+  const g = diagnoseGrind(body.top!, body.mid!, body.base!);
+  const r = diagnoseTds(body.tds!);
+  const check: Check = {
+    id: randomId(), sd: shiftOf(now, tz(c.env)).day, sh: body.sh, b: body.bean as Bean,
+    top: body.top!, mid: body.mid!, base: body.base!, tds: body.tds!, g, r, ok: g === 'ok' && r === 'ok' ? 1 : 0, n: staff, at: now,
+  };
+  await c.env.DB.prepare(
+    `INSERT INTO checks (id, store_id, sd, sh, bean, top, mid, base, tds, g, r, ok, by, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)`,
+  )
+    .bind(check.id, store.id, check.sd, check.sh, check.b, check.top, check.mid, check.base, check.tds, g, r, check.ok, staff, now)
+    .run();
+  return c.json({ now, check });
 });
 
 app.post('/api/push/subscribe', requireStore, async (c) => {
@@ -528,7 +603,8 @@ app.get('/api/admin/log', requireAdmin, async (c) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return err(c, 400, 'bad_day');
   const store = await c.env.DB.prepare('SELECT * FROM stores WHERE id = ?1').bind(id).first<StoreRow>();
   if (!store) return err(c, 404, 'not_found');
-  return c.json({ day, store: storeInfo(store), batches: await batchesFor(c.env, id, [day]) });
+  const [batches, checks] = await Promise.all([batchesFor(c.env, id, [day]), checksFor(c.env, id, [day])]);
+  return c.json({ day, store: storeInfo(store), batches, checks });
 });
 
 /** Give stores a new random 6-digit PIN. Returns the PINs once (they are stored hashed). */
@@ -587,6 +663,46 @@ app.get('/api/admin/waste', requireAdmin, async (c) => {
   return c.json({ from, to, today, totals });
 });
 
+/** Grind & TDS check compliance per store over a range of shift days (max 92). */
+app.get('/api/admin/checks', requireAdmin, async (c) => {
+  const now = Date.now();
+  const today = shiftOf(now, tz(c.env)).day;
+  const from = c.req.query('from') ?? today;
+  const to = c.req.query('to') ?? today;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || from > to) return err(c, 400, 'bad_range');
+  // checks expected per store: every shift in the range that is already past its grace hour, for both beans
+  let expected = 0;
+  for (let d = from, i = 0; d <= to && d <= today && i < 93; d = nextDay(d), i++) {
+    for (const h of [4, 16]) {
+      const start = Date.parse(`${d}T${String(h).padStart(2, '0')}:00:00Z`) - tz(c.env) * 60000;
+      if (start >= CHECKS_SINCE_MS && start + CHECK_GRACE_MS <= now) expected += GRIND_BEANS.length;
+    }
+  }
+  const { results } = await c.env.DB.prepare(
+    `WITH a AS (
+       SELECT store_id, sd, sh, bean, ok, g, r,
+              ROW_NUMBER() OVER (PARTITION BY store_id, sd, sh, bean ORDER BY at DESC) AS last,
+              ROW_NUMBER() OVER (PARTITION BY store_id, sd, sh, bean ORDER BY at) AS first,
+              COUNT(*) OVER (PARTITION BY store_id, sd, sh, bean) AS tries
+       FROM checks WHERE sd >= ?1 AND sd <= ?2)
+     SELECT store_id AS sid,
+            SUM(last = 1) AS done,
+            SUM(last = 1 AND ok = 1) AS passed,
+            SUM(last = 1 AND ok = 0) AS failing,
+            SUM(first = 1 AND ok = 0) AS failed_first,
+            SUM(first = 1 AND g = 'coarse') AS coarse,
+            SUM(first = 1 AND g = 'fine') AS fine,
+            SUM(first = 1 AND g IN ('uneven', 'weigh')) AS uneven,
+            SUM(first = 1 AND r = 'low') AS low,
+            SUM(first = 1 AND r = 'high') AS high,
+            SUM(last = 1 AND tries > 1) AS retested
+     FROM a GROUP BY store_id`,
+  )
+    .bind(from, to)
+    .all<Record<string, number>>();
+  return c.json({ from, to, today, expected, rows: results });
+});
+
 /** Results per bean batch over a range of days (max 92): one entry per store / batch / slot. */
 app.get('/api/admin/batches', requireAdmin, async (c) => {
   const today = dayKey(Date.now(), tz(c.env));
@@ -637,6 +753,22 @@ async function refreshUsage(env: Env): Promise<UsageSnapshot> {
   return snap;
 }
 
+/** Once per shift, an hour after it starts: remind stores that have not done their grind check. */
+async function sendCheckReminders(env: Env, scheduled: number) {
+  if (!env.VAPID_PRIVATE_JWK || !env.VAPID_PUBLIC_KEY) return;
+  const minute = Math.floor(scheduled / 60000) * 60000;
+  const cur = shiftOf(minute, tz(env));
+  if (minute - cur.start !== CHECK_GRACE_MS || cur.start < CHECKS_SINCE_MS) return;
+  const { results } = await env.DB.prepare(
+    `SELECT DISTINCT p.store_id AS sid FROM push_subs p JOIN stores s ON s.id = p.store_id
+     WHERE s.active = 1
+       AND (SELECT COUNT(DISTINCT bean) FROM checks k WHERE k.store_id = p.store_id AND k.sd = ?1 AND k.sh = ?2) < ?3`,
+  )
+    .bind(cur.day, cur.sh, GRIND_BEANS.length)
+    .all<{ sid: number }>();
+  await tickleStores(env, results.map((r) => r.sid));
+}
+
 async function sendExpiryPushes(env: Env, scheduled: number) {
   if (!env.VAPID_PRIVATE_JWK || !env.VAPID_PUBLIC_KEY) return;
   const end = Math.floor(scheduled / 60000) * 60000;
@@ -658,8 +790,11 @@ async function sendExpiryPushes(env: Env, scheduled: number) {
   )
     .bind(today, yesterday, start, end)
     .all<{ sid: number }>();
-  if (!results.length) return;
-  const ids = results.map((r) => r.sid);
+  await tickleStores(env, results.map((r) => r.sid));
+}
+
+async function tickleStores(env: Env, ids: number[]) {
+  if (!ids.length || !env.VAPID_PRIVATE_JWK || !env.VAPID_PUBLIC_KEY) return;
   const subs = await env.DB.prepare(`SELECT endpoint FROM push_subs WHERE store_id IN (${ids.map((_, i) => `?${i + 1}`).join(',')})`)
     .bind(...ids)
     .all<{ endpoint: string }>();
@@ -775,6 +910,7 @@ async function nightly(env: Env) {
     env.DB.prepare('DELETE FROM days WHERE day < ?1').bind(cutoff),
     env.DB.prepare('DELETE FROM stats_daily WHERE day < ?1').bind(cutoff),
     env.DB.prepare('DELETE FROM batch_daily WHERE day < ?1').bind(cutoff),
+    env.DB.prepare('DELETE FROM checks WHERE sd < ?1').bind(cutoff),
   ]);
 }
 
@@ -784,6 +920,9 @@ export default {
     if (event.cron === '30 21 * * *') ctx.waitUntil(nightly(env));
     else if (event.cron === '7 * * * *') {
       if (env.ANALYTICS_TOKEN && env.ACCOUNT_ID) ctx.waitUntil(refreshUsage(env).then(() => undefined));
-    } else ctx.waitUntil(sendExpiryPushes(env, event.scheduledTime));
+    } else {
+      ctx.waitUntil(sendExpiryPushes(env, event.scheduledTime));
+      ctx.waitUntil(sendCheckReminders(env, event.scheduledTime));
+    }
   },
 } satisfies ExportedHandler<Env>;

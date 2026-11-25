@@ -36,8 +36,8 @@ self.addEventListener('fetch', (e) => {
 });
 
 const LABELS = {
-  en: { espresso_hot: 'Espresso · Hot', espresso_cold: 'Espresso · Cold', espresso: 'Espresso', hot_drip: 'Hot drip', iced_drip: 'Iced drip', ethiopian: 'Ethiopian', brazilian: 'Brazilian', expired: 'expired', title: 'Batch expired', body: 'Open the board to start a new batch.', okTitle: 'HM Calibration Log', okBody: 'Notifications are working on this device.' },
-  ar: { espresso_hot: 'إسبريسو · ساخن', espresso_cold: 'إسبريسو · بارد', espresso: 'إسبريسو', hot_drip: 'مقطّرة ساخنة', iced_drip: 'مقطّرة مثلّجة', ethiopian: 'إثيوبي', brazilian: 'برازيلي', expired: 'منتهية', title: 'دفعة منتهية', body: 'افتح اللوحة لبدء دفعة جديدة.', okTitle: 'سجل المعايرة', okBody: 'الإشعارات تعمل على هذا الجهاز.' },
+  en: { espresso_hot: 'Espresso · Hot', espresso_cold: 'Espresso · Cold', espresso: 'Espresso', hot_drip: 'Hot drip', iced_drip: 'Iced drip', ethiopian: 'Ethiopian', brazilian: 'Brazilian', expired: 'expired', title: 'Batch expired', body: 'Open the board to start a new batch.', okTitle: 'HM Calibration Log', okBody: 'Notifications are working on this device.', gcTitle: 'Grind check due', gcBody: 'Do the KRUVE + TDS check for this shift:' },
+  ar: { espresso_hot: 'إسبريسو · ساخن', espresso_cold: 'إسبريسو · بارد', espresso: 'إسبريسو', hot_drip: 'مقطّرة ساخنة', iced_drip: 'مقطّرة مثلّجة', ethiopian: 'إثيوبي', brazilian: 'برازيلي', expired: 'منتهية', title: 'دفعة منتهية', body: 'افتح اللوحة لبدء دفعة جديدة.', okTitle: 'سجل المعايرة', okBody: 'الإشعارات تعمل على هذا الجهاز.', gcTitle: 'فحص الطحن مطلوب', gcBody: 'قم بفحص كروفي و TDS لهذه الوردية:' },
 };
 
 function label(L, slot) {
@@ -58,10 +58,16 @@ self.addEventListener('push', (e) => {
           const s = await res.json();
           const now = s.now;
           const latest = {};
-          for (const b of s.batches) if (!b.v && (!latest[b.s] || latest[b.s].t < b.t)) latest[b.s] = b;
+          for (const b of s.batches) {
+            const key = b.s + '#' + (b.k || 1); // each drip tank has its own batch
+            if (!b.v && (!latest[key] || latest[key].t < b.t)) latest[key] = b;
+          }
           const expired = Object.values(latest).filter((b) => b.x <= now && now - b.x < 10 * 60 * 1000);
-          if (expired.length) body = expired.map((b) => `${label(L, b.s)} — ${L.expired}`).join('\n');
-          else {
+          if (expired.length) body = expired.map((b) => `${label(L, b.s)}${b.k > 1 ? ' #' + b.k : ''} — ${L.expired}`).join('\n');
+          else if (s.due && s.due.length) {
+            title = L.gcTitle;
+            body = `${L.gcBody} ${s.due.map((b) => L[b]).join(', ')}`;
+          } else {
             // nothing expired just now: this was a test from the More screen
             title = L.okTitle;
             body = L.okBody;

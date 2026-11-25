@@ -160,9 +160,94 @@ export interface StateResponse {
   now: number;
   store: StoreInfo;
   batches: Batch[]; // today + yesterday (for batches crossing midnight)
+  checks: Check[]; // grind & TDS checks for the current and previous shift day
+  due?: Bean[]; // beans whose check for the current shift is overdue
   vapid: string;
 }
 
 export function dayKey(ms: number, tzOffsetMin: number): string {
   return new Date(ms + tzOffsetMin * 60000).toISOString().slice(0, 10);
 }
+
+// ---------------------------------------------------------------- grind & TDS check (KRUVE + refractometer)
+
+/** Two shifts a day: morning 04:00–16:00, evening 16:00–04:00 (store time). One check per bean per shift. */
+export const SHIFT_START_H = 4;
+export type ShiftKey = 'm' | 'e';
+export const GRIND_BEANS: Bean[] = ['ethiopian', 'brazilian'];
+/** Shifts before this moment are not counted as missed (feature launch: evening shift, 25 Nov 2026, Riyadh). */
+export const CHECKS_SINCE_MS = Date.parse('2026-11-25T16:00:00+03:00');
+/** A check is overdue this long after its shift starts. */
+export const CHECK_GRACE_MS = 60 * 60 * 1000;
+
+/** Which shift a moment belongs to. `day` is the date the shift started on (an evening check at 01:00 belongs to the day before). */
+export function shiftOf(ms: number, tzOffsetMin: number): { day: string; sh: ShiftKey; start: number } {
+  const local = ms + tzOffsetMin * 60000;
+  const shifted = local - SHIFT_START_H * 3600000;
+  const day = new Date(shifted).toISOString().slice(0, 10);
+  const hourInShiftDay = Math.floor((shifted - Date.parse(day + 'T00:00:00Z')) / 3600000);
+  const sh: ShiftKey = hourInShiftDay < 12 ? 'm' : 'e';
+  const start = Date.parse(day + 'T00:00:00Z') + (SHIFT_START_H + (sh === 'e' ? 12 : 0)) * 3600000 - tzOffsetMin * 60000;
+  return { day, sh, start };
+}
+
+/** 20 g sample, weights in tenths of a gram. */
+export const GRIND_SAMPLE_T = 200;
+export const GRIND_TARGET = {
+  top: [100, 110], // > 1000 µm (boulders): 10–11 g, 50–55 %
+  mid: [40, 50], // 800–1000 µm (target): 4–5 g, 20–25 %
+  base: [40, 50], // < 800 µm (fines): 4–5 g, 20–25 %
+} as const;
+/** The three chambers must add up to roughly the 20 g sample (allows a little spill). */
+export const GRIND_TOTAL_OK: [number, number] = [180, 215];
+/** Brewed hot drip TDS, in hundredths of a percent: 1.30 – 1.80 %. */
+export const TDS_RANGE: [number, number] = [130, 180];
+
+export type GrindResult = 'ok' | 'weigh' | 'coarse' | 'fine' | 'uneven';
+export type TdsResult = 'ok' | 'low' | 'high';
+
+export function diagnoseGrind(top: number, mid: number, base: number): GrindResult {
+  const total = top + mid + base;
+  if (total < GRIND_TOTAL_OK[0] || total > GRIND_TOTAL_OK[1]) return 'weigh';
+  const [tLo, tHi] = GRIND_TARGET.top;
+  const [mLo, mHi] = GRIND_TARGET.mid;
+  const [bLo, bHi] = GRIND_TARGET.base;
+  const coarse = top > tHi || base < bLo;
+  const fine = base > bHi || top < tLo;
+  if (coarse && fine) return 'uneven'; // big particles *and* fines: burrs, not the setting
+  if (coarse) return 'coarse';
+  if (fine) return 'fine';
+  if (mid < mLo || mid > mHi) return 'uneven';
+  return 'ok';
+}
+
+export function diagnoseTds(tds: number): TdsResult {
+  return tds < TDS_RANGE[0] ? 'low' : tds > TDS_RANGE[1] ? 'high' : 'ok';
+}
+
+/** One grind & TDS check attempt. Re-tests are new rows; the latest per shift + bean counts. */
+export interface Check {
+  id: string;
+  sd: string; // shift day
+  sh: ShiftKey;
+  b: Bean;
+  top: number; // tenths of a gram
+  mid: number;
+  base: number;
+  tds: number; // hundredths of a percent
+  g: GrindResult;
+  r: TdsResult;
+  ok: 0 | 1;
+  n: string; // who
+  at: number;
+}
+
+export function isValidCheckInput(v: { top?: unknown; mid?: unknown; base?: unknown; tds?: unknown }): boolean {
+  const g = (x: unknown) => Number.isInteger(x) && (x as number) >= 0 && (x as number) <= 300;
+  return g(v.top) && g(v.mid) && g(v.base) && Number.isInteger(v.tds) && (v.tds as number) >= 0 && (v.tds as number) <= 2500;
+}
+
+/** "10.5" from tenths of a gram. */
+export const fmtTenths = (n: number) => (n / 10).toFixed(1).replace(/\.0$/, '');
+/** "1.45" from hundredths of a percent. */
+export const fmtTds = (n: number) => (n / 100).toFixed(2);

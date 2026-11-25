@@ -48,6 +48,21 @@ Each drip coffee (hot/iced × Ethiopian/Brazilian) can run in more than one tank
 and log what was left in it. The log, *Last calibration* and the PDF show the tank. Batches store the tank as `k`
 (missing = tank 1). Espresso has no tanks.
 
+## Grind & TDS check (KRUVE sifter + refractometer)
+
+Once per shift for each drip bean (Ethiopian and Brazilian). Shifts: **morning 04:00–16:00**, **evening 16:00–04:00**
+(store time; staff can pick the shift in the form). The board shows a *Grind check* card: due → overdue an hour after the
+shift starts (with a push reminder) → passed, or "re-test needed".
+
+The guided form has 4 steps: zero the R2 refractometer → sift 20 g and enter the three chamber weights → enter the hot drip
+TDS (3rd reading) → result with the fix to apply. Targets: top (>1000 µm) 10–11 g, middle (800–1000 µm) 4–5 g,
+base (<800 µm) 4–5 g, total about 20 g; TDS 1.30–1.80 %. Too much on top / too little in the base = too coarse
+(grind finer); too much in the base / too little on top = too fine (grind coarser); both = uneven (burrs).
+Re-tests are saved as new attempts; the latest counts. A failed check never blocks logging.
+
+Checks are stored in the `checks` table (one row per attempt), shown in the Log and the daily PDF, and summarised in
+admin → *Grind checks* (done %, pass %, problems by type, per store / area manager / ROM / city). Purged after 92 days.
+
 ## Waste in coffee weight
 
 All waste is reported as coffee weight (g / kg). Staff still choose litres for thrown drip; it is converted at **1 L = 70 g** (`DRIP_G_PER_L` in `shared/config.ts`). Espresso shots: dose 1 = 18.8 g, dose 2 = 25.8 g.

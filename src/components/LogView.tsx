@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
-import { type Batch, type StoreInfo, formatDose, thrownTenths, slotsFor, dripTenths, tanksFor } from '../../shared/config';
+import { type Batch, type Check, type StoreInfo, fmtTds, fmtTenths, formatDose, thrownTenths, slotsFor, dripTenths, tanksFor } from '../../shared/config';
 import { Grams } from './Grams';
 import { useI18n, slotLabel, type Strings } from '../lib/i18n';
 import { addDays, clock, dayKey, formatDay, nowMs } from '../lib/time';
@@ -17,18 +17,20 @@ export function LogView({
   fetchDay,
   fetchDays,
   liveBatches,
+  liveChecks,
   onAuthError,
 }: {
   store: StoreInfo;
-  fetchDay: (day: string) => Promise<{ batches: Batch[] }>;
+  fetchDay: (day: string) => Promise<{ batches: Batch[]; checks?: Check[] }>;
   fetchDays?: () => Promise<{ days: Record<string, number> }>;
   liveBatches?: Batch[];
+  liveChecks?: Check[];
   onAuthError?: (e: unknown) => boolean;
 }) {
   const { t, lang } = useI18n();
   const today = dayKey(nowMs());
   const [day, setDay] = useState(today);
-  const [fetched, setFetched] = useState<{ day: string; batches: Batch[] } | null>(null);
+  const [fetched, setFetched] = useState<{ day: string; batches: Batch[]; checks: Check[] } | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState<'pdf' | 'share' | null>(null);
 
@@ -54,14 +56,14 @@ export function LogView({
   };
 
   // Past days don't change, so each one is fetched once per visit and then served from memory.
-  const cache = useRef(new Map<string, Batch[]>());
+  const cache = useRef(new Map<string, { batches: Batch[]; checks: Check[] }>());
 
   const useLive = !!liveBatches && day === today;
   useEffect(() => {
     if (useLive) return;
     const hit = cache.current.get(day);
     if (hit) {
-      setFetched({ day, batches: hit });
+      setFetched({ day, ...hit });
       if (day !== today) return; // today's list (admin) is refreshed below while the cached copy shows
     }
     let cancelled = false;
@@ -69,8 +71,9 @@ export function LogView({
     fetchRef
       .current(day)
       .then((r) => {
-        cache.current.set(day, r.batches);
-        if (!cancelled) setFetched({ day, batches: r.batches });
+        const v = { batches: r.batches, checks: r.checks ?? [] };
+        cache.current.set(day, v);
+        if (!cancelled) setFetched({ day, ...v });
       })
       .catch((e) => {
         if (!cancelled && !authRef.current?.(e)) toast.error(failedText.current);
@@ -82,6 +85,7 @@ export function LogView({
   }, [day, useLive, today]);
 
   const batches = useLive ? liveBatches!.filter((b) => dayKey(b.t) === day) : fetched?.day === day ? fetched.batches : null;
+  const checks = useLive ? (liveChecks ?? []).filter((c) => c.sd === day) : fetched?.day === day ? fetched.checks : [];
   const oldest = addDays(today, -RETENTION + 1);
   const now = nowMs();
 
@@ -90,7 +94,7 @@ export function LogView({
     setBusy(mode);
     const id = toast.loading(t.preparing);
     try {
-      const file = await buildPdf({ t, lang, store, day, batches });
+      const file = await buildPdf({ t, lang, store, day, batches, checks });
       toast.dismiss(id);
       if (mode === 'share' && canShareFile(file)) {
         await navigator.share({ files: [file], title: file.name }).catch(() => {});
@@ -179,6 +183,7 @@ export function LogView({
       </div>
       <div className="log-main">
         {batches && <LastCalibrations store={store} batches={sorted} day={day} isToday={day === today} now={now} />}
+        {batches && <ChecksCard checks={checks} />}
         {!batches ? (
           <div className="skeleton-list">
             {[0, 1, 2, 3].map((i) => (
@@ -381,5 +386,63 @@ function LogSections({ batches, now, tanks }: { batches: Batch[]; now: number; t
           );
         })}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------- grind & TDS checks
+
+function ChecksCard({ checks }: { checks: Check[] }) {
+  const { t } = useI18n();
+  const rows = [...checks].sort((a, b) => a.at - b.at);
+  const seen = new Set<string>();
+  return (
+    <section className="last-card checks-card" aria-label={t.gcLogTitle}>
+      <div className="last-title">{t.gcLogTitle}</div>
+      {rows.length === 0 ? (
+        <p className="muted checks-empty">{t.gcNoneYet}</p>
+      ) : (
+        <div className="checks-table" role="table">
+          <div className="checks-row checks-head" role="row">
+            <span>{t.item}</span>
+            <span>{t.time}</span>
+            <span>{t.by}</span>
+            <span>{t.gcTop} · {t.gcMid} · {t.gcBase}</span>
+            <span>TDS</span>
+            <span>{t.status}</span>
+          </div>
+          {rows.map((c) => {
+            const key = `${c.sh}#${c.b}`;
+            const retest = seen.has(key);
+            seen.add(key);
+            const why = [c.g !== 'ok' ? t[`gcG_${c.g}`] : '', c.r !== 'ok' ? t[`gcR_${c.r}`].split(' — ')[0] : ''].filter(Boolean).join(' · ');
+            return (
+              <div className="checks-row" role="row" key={c.id} data-ok={c.ok ? true : undefined}>
+                <span className="checks-bean">
+                  <span>
+                    <i className={c.b === 'ethiopian' ? 'dot-eth' : 'dot-bra'} /> {t[c.b]}
+                  </span>
+                  <span className="tank-sub">
+                    {c.sh === 'm' ? t.shiftM : t.shiftE}
+                    {retest ? ` · ${t.gcRetestTag}` : ''}
+                  </span>
+                </span>
+                <span className="num">{clock(c.at)}</span>
+                <span>{c.n}</span>
+                <span className="num" dir="ltr">
+                  {fmtTenths(c.top)} · {fmtTenths(c.mid)} · {fmtTenths(c.base)} g
+                </span>
+                <span className="num" data-bad={c.r !== 'ok' || undefined}>{fmtTds(c.tds)}%</span>
+                <span className="checks-status">
+                  <span className="status-pill" data-kind={c.ok ? 'fresh' : 'expired'}>
+                    {c.ok ? t.gcPassed : t.gcFailTitle}
+                  </span>
+                  {why && <small className="muted">{why}</small>}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
   );
 }
