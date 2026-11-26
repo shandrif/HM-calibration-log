@@ -1,5 +1,5 @@
 import type { Batch, Check, Down, StoreInfo } from '../../shared/config';
-import { formatDose, formatGrams, thrownTenths, dripTenths, tanksFor, fmtTds, fmtTenths } from '../../shared/config';
+import { formatDose, formatGrams, thrownTenths, dripTenths, tanksFor, fmtTds, fmtTenths, serviceTenths } from '../../shared/config';
 import type { Strings } from '../lib/i18n';
 import { slotLabel } from '../lib/i18n';
 import { batchOutcome, discardByBean } from '../lib/board';
@@ -86,7 +86,7 @@ export function ReportPages({
   const live = batches.filter((b) => !b.v);
   const expired = live.filter((b) => batchOutcome(b, batches, generatedAt) === 'expired').length;
   const byBean = discardByBean(live);
-  const thrownG = live.reduce((a, b) => a + (b.wg ?? thrownTenths(b.w1, b.w2)), 0);
+  const thrownG = live.reduce((a, b) => a + (b.wg ?? thrownTenths(b.w1, b.w2)) + serviceTenths(b), 0);
   const name = lang === 'ar' && store.name_ar ? store.name_ar : store.name;
   return (
     <>
@@ -257,7 +257,16 @@ function Row({ t, b, all, now, tanks }: { t: Strings; b: Batch; all: Batch[]; no
       <span className="c-dose" dir="ltr">{b.d1 != null ? `${formatDose(b.d1)} · ${formatDose(b.d2)}` : ''}</span>
       <span className="c-by">{b.n}</span>
       <span className="c-end" dir="ltr">{clock(b.x)}</span>
-      <span className="c-disc" dir="ltr">{b.dl ? `${b.dl / 1000} L · ${formatGrams(dripTenths(b.dl))}` : b.w1 || b.w2 ? `D1×${b.w1 ?? 0} D2×${b.w2 ?? 0} · ${formatGrams(b.wg ?? thrownTenths(b.w1, b.w2))}` : ''}</span>
+      <span className="c-disc" dir="ltr">
+        {b.dl
+          ? `${b.dl / 1000} L · ${formatGrams(dripTenths(b.dl))}`
+          : [
+              b.w1 || b.w2 ? `D1×${b.w1 ?? 0} D2×${b.w2 ?? 0} · ${formatGrams(b.wg ?? thrownTenths(b.w1, b.w2))}` : '',
+              b.s1 || b.s2 ? `+${(b.s1 ?? 0) + (b.s2 ?? 0)} svc · ${formatGrams(serviceTenths(b))}` : '',
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+      </span>
       <span className="c-status">{statusText}</span>
     </div>
   );

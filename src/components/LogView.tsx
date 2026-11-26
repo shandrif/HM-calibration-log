@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
-import { type Batch, type Check, type Down, type StoreInfo, fmtTds, fmtTenths, formatDose, thrownTenths, slotsFor, dripTenths, tanksFor } from '../../shared/config';
+import { type Batch, type Check, type Down, type StoreInfo, serviceTenths, fmtTds, fmtTenths, formatDose, thrownTenths, slotsFor, dripTenths, tanksFor } from '../../shared/config';
 import { Grams } from './Grams';
 import { useI18n, slotLabel, type Strings } from '../lib/i18n';
 import { addDays, clock, dayKey, formatDay, nowMs, shortDuration } from '../lib/time';
@@ -113,7 +113,8 @@ export function LogView({
   const sorted = batches ? [...batches].sort((a, b) => b.t - a.t) : [];
   const live = sorted.filter((b) => !b.v);
   const byBean = discardByBean(live);
-  const thrownG = live.reduce((a, b) => a + (b.wg ?? thrownTenths(b.w1, b.w2)), 0);
+  // espresso thrown: during calibration + bad shots during service
+  const thrownG = live.reduce((a, b) => a + (b.wg ?? thrownTenths(b.w1, b.w2)) + serviceTenths(b), 0);
 
   return (
     <div className="log-cq">
@@ -368,6 +369,11 @@ function LogSections({ batches, now, tanks }: { batches: Batch[]; now: number; t
                         {!!(b.w1 || b.w2) && (
                           <span className="c-d-waste">
                             <bdi dir="ltr">D1×{b.w1 ?? 0} D2×{b.w2 ?? 0}</bdi> · <Grams tenths={b.wg ?? thrownTenths(b.w1, b.w2)} lang={lang} />
+                          </span>
+                        )}
+                        {!!(b.s1 || b.s2) && (
+                          <span className="c-d-waste c-d-service">
+                            {t.inService}: <bdi dir="ltr">D1×{b.s1 ?? 0} D2×{b.s2 ?? 0}</bdi> · <Grams tenths={serviceTenths(b)} lang={lang} />
                           </span>
                         )}
                         {!!b.dl && (

@@ -1,7 +1,7 @@
 import { memo } from 'react';
-import { formatDose, UNDO_MS, type Down } from '../../shared/config';
+import { formatDose, formatGrams, UNDO_MS, type Down, recentShots, serviceTenths, SERVICE_PROMPT } from '../../shared/config';
 import type { SlotView, TankView } from '../lib/board';
-import { useI18n, slotLabel } from '../lib/i18n';
+import { useI18n, slotLabel, fmt } from '../lib/i18n';
 import { clock, countdown } from '../lib/time';
 import { Ring } from './Ring';
 import { IconDots, IconPower, IconUndo } from './Icons';
@@ -14,13 +14,14 @@ interface Props {
   onDemo?: () => void;
   off?: Down;
   onPower?: () => void;
+  onShot?: () => void;
   busy: boolean;
   onPrimary: () => void;
   onUndo: () => void;
   onMenu: () => void;
 }
 
-export const Tile = memo(function Tile({ view, now, alarming, multiTank, onDemo, off, onPower, busy, onPrimary, onUndo, onMenu }: Props) {
+export const Tile = memo(function Tile({ view, now, alarming, multiTank, onDemo, off, onPower, onShot, busy, onPrimary, onUndo, onMenu }: Props) {
   const { t } = useI18n();
   const { def, current, phase, latest } = view;
   const { item } = slotLabel(t, def.slot);
@@ -45,6 +46,10 @@ export const Tile = memo(function Tile({ view, now, alarming, multiTank, onDemo,
     caption = t.expired;
   }
 
+  // espresso: bad shots thrown during service on the running calibration
+  const service = isEspresso && current && phase !== 'none' ? (current.s1 ?? 0) + (current.s2 ?? 0) : 0;
+  const recent = isEspresso && current ? recentShots(current, now) : 0;
+  const prompt = recent >= SERVICE_PROMPT.shots && phase !== 'none';
   const cta = isEspresso ? (current ? t.recalibrate : t.calibrate) : view.tanks.some((tk) => tk.current) ? t.newBatch : t.start;
 
   if (off) {
@@ -81,7 +86,7 @@ export const Tile = memo(function Tile({ view, now, alarming, multiTank, onDemo,
   }
 
   return (
-    <article className="tile" data-phase={phase} data-alarm={alarming || undefined} aria-live="off">
+    <article className="tile" data-phase={phase} data-alarm={alarming || undefined} data-prompt={prompt || undefined} aria-live="off">
       {/* re-mounts on every state change so the light sweeps across the glass once */}
       {phase !== 'none' && <span className="tile-shine" key={phase + (current?.id ?? '')} aria-hidden />}
       <header className="tile-head">
@@ -159,7 +164,17 @@ export const Tile = memo(function Tile({ view, now, alarming, multiTank, onDemo,
         )}
       </div>
 
+      {service > 0 && !prompt && (
+        <div className="tile-service num">{fmt(t.serviceLine, { n: service, g: formatGrams(serviceTenths(current!)) })}</div>
+      )}
+      {prompt && <div className="tile-prompt">{fmt(t.recalPrompt, { n: recent })}</div>}
+
       <div className="tile-actions">
+        {onShot && isEspresso && current && phase !== 'none' && (
+          <button className="btn btn-ghost tile-shot" onClick={onShot} disabled={busy}>
+            {t.shotThrown}
+          </button>
+        )}
         <button className="btn btn-primary tile-cta" onClick={onPrimary} disabled={busy} data-busy={busy || undefined}>
           {cta}
         </button>

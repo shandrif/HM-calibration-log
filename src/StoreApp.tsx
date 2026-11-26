@@ -348,6 +348,26 @@ function Shell({ store, setStore, batches, setBatches, checks, setChecks, downs,
     }
   };
 
+  // ---------------------------------------------------------------- bad shots thrown during service
+  const [shotSheet, setShotSheet] = useState<null | { view: SlotView; batch: Batch; d1: number; d2: number }>(null);
+  const saveShots = async () => {
+    if (!shotSheet || shotSheet.d1 + shotSheet.d2 === 0) return;
+    const { batch, d1, d2, view } = shotSheet;
+    setShotSheet(null);
+    setBusySlot(view.def.slot);
+    try {
+      const res = await api.shots(batch.id, dayKey(batch.t), d1, d2);
+      setServerNow(res.now);
+      setBatches((all) => all.map((x) => (x.id === batch.id ? res.batch : x)));
+      haptic(15);
+      toast.success(fmt(t.shotsSaved, { n: d1 + d2 }));
+    } catch (e) {
+      handleError(e);
+    } finally {
+      setBusySlot(null);
+    }
+  };
+
   // ---------------------------------------------------------------- machine off / on (cleaning)
   const [powerSheet, setPowerSheet] = useState<null | { view: SlotView }>(null);
   const itemName = (slot: string) => {
@@ -576,6 +596,7 @@ function Shell({ store, setStore, batches, setBatches, checks, setChecks, downs,
                             multiTank={multiTank(v)}
                             onDemo={demo && !openDown(downs, v.def.slot) ? () => demoExpire(v) : undefined}
                             off={openDown(downs, v.def.slot)}
+                            onShot={v.def.kind === 'espresso' ? () => v.current && setShotSheet({ view: v, batch: v.current, d1: 0, d2: 0 }) : undefined}
                             onPower={() => onPower(v)}
                             busy={busySlot === v.def.slot}
                             onPrimary={() => onPrimary(v)}
@@ -788,6 +809,26 @@ function Shell({ store, setStore, batches, setBatches, checks, setChecks, downs,
         onClose={() => setGrindSheet(null)}
         onSave={saveCheck}
       />
+
+      <Sheet open={!!shotSheet} onOpenChange={(o) => !o && setShotSheet(null)} title={shotSheet ? `${t.shotsTitle} · ${slotLabel(t, shotSheet.view.def.slot).item}` : ''}>
+        {shotSheet && (
+          <div className="sheet-body">
+            <p className="sheet-text muted">{t.shotsHint}</p>
+            <div className="shot-counters">
+              <Counter label={t.dose1} hint={fmt(t.gPerShot, { g: DOSE_TENTHS_G.d1 / 10 })} value={shotSheet.d1} onChange={(v) => setShotSheet({ ...shotSheet, d1: v })} />
+              <Counter label={t.dose2} hint={fmt(t.gPerShot, { g: DOSE_TENTHS_G.d2 / 10 })} value={shotSheet.d2} onChange={(v) => setShotSheet({ ...shotSheet, d2: v })} />
+            </div>
+            <div className="sheet-actions">
+              <button className="btn btn-ghost btn-lg" onClick={() => setShotSheet(null)}>
+                {t.cancel}
+              </button>
+              <button className="btn btn-primary btn-lg" disabled={shotSheet.d1 + shotSheet.d2 === 0} onClick={() => void saveShots()}>
+                {t.save} · {shotSheet.d1 + shotSheet.d2} · <Grams tenths={thrownTenths(shotSheet.d1, shotSheet.d2)} lang={lang} />
+              </button>
+            </div>
+          </div>
+        )}
+      </Sheet>
 
       <Sheet open={!!powerSheet} onOpenChange={(o) => !o && setPowerSheet(null)} title={powerSheet ? fmt(t.offTitle, { item: itemName(powerSheet.view.def.slot) }) : ''}>
         {powerSheet && (

@@ -66,6 +66,7 @@ export const api = {
   log: (day: string) => req<LogResponse>('GET', `/api/log?day=${day}`),
   saveCheck: (body: { sh: ShiftKey; bean: string; top: number; mid: number; base: number; tds: number; staff: string; fix: Fix }) =>
     req<{ now: number; check: Check }>('POST', '/api/checks', body),
+  shots: (id: string, day: string, d1: number, d2: number) => req<{ now: number; batch: Batch }>('POST', `/api/batches/${id}/shots`, { day, d1, d2 }),
   machineOff: (slot: string, staff: string, fix: Fix) => req<{ now: number; down: Down }>('POST', '/api/downtime', { slot, staff, fix }),
   machineOn: (id: string, staff: string, fix: Fix) => req<{ now: number; down: Down }>('POST', `/api/downtime/${id}/on`, { staff, fix }),
   logDays: () => req<{ days: Record<string, number> }>('GET', '/api/log/days'),
@@ -97,7 +98,7 @@ export interface BatchesResponse {
     sid: number;
     bn: string;
     slot: string;
-    v: number[]; // logs, discardMl, discards, w1, w2, wgTenths, sumD1, sumD2
+    v: number[]; // logs, discardMl, discards, w1, w2, wgTenths, sumD1, sumD2, service s1, service s2
     mn1: number | null;
     mx1: number | null;
     mn2: number | null;
@@ -111,7 +112,7 @@ export interface WasteResponse {
   from: string;
   to: string;
   today: string;
-  totals: Record<string, Record<string, number[]>>; // storeId -> slot -> [ml, discards, batches, dose1 thrown, dose2 thrown, thrown 0.1 g]
+  totals: Record<string, Record<string, number[]>>; // storeId -> slot -> [ml, discards, batches, dose1 thrown, dose2 thrown, thrown 0.1 g, service dose1, service dose2]
 }
 
 type StoreBody = Omit<Partial<AdminStore>, 'tanks'> & { tanks?: Record<string, number> };

@@ -3,7 +3,7 @@ import { motion } from 'motion/react';
 import { toast } from 'sonner';
 import { adminApi, type AdminStore, type WasteResponse } from '../lib/api';
 import { addDays } from '../lib/time';
-import { formatGrams, dripTenths } from '../../shared/config';
+import { formatGrams, dripTenths, thrownTenths } from '../../shared/config';
 
 type GroupBy = 'store' | 'area_manager' | 'rom' | 'city';
 const RANGES = [
@@ -31,7 +31,10 @@ interface Row {
   stores: number;
   w1: number;
   w2: number;
-  wg: number;
+  wg: number; // espresso thrown during calibration (0.1 g)
+  s1: number; // dose 1 shots thrown during service
+  s2: number;
+  sg: number; // espresso thrown during service (0.1 g)
 }
 
 export function WastePanel({ stores, today, filterNote }: { stores: AdminStore[]; today: string; filterNote?: string }) {
@@ -71,6 +74,9 @@ export function WastePanel({ stores, today, filterNote }: { stores: AdminStore[]
           w1: 0,
           w2: 0,
           wg: 0,
+          s1: 0,
+          s2: 0,
+          sg: 0,
         });
       groups.get(key)!.stores++;
     }
@@ -80,10 +86,13 @@ export function WastePanel({ stores, today, filterNote }: { stores: AdminStore[]
       const key = groupBy === 'store' ? sid : (s[groupBy] || 'Unassigned').trim();
       const g = groups.get(key);
       if (!g) continue;
-      for (const [slot, [ml, n, batches, w1 = 0, w2 = 0, wg = 0]] of Object.entries(slots)) {
+      for (const [slot, [ml, n, batches, w1 = 0, w2 = 0, wg = 0, s1 = 0, s2 = 0]] of Object.entries(slots)) {
         g.w1 += w1;
         g.w2 += w2;
         g.wg += wg;
+        g.s1 += s1;
+        g.s2 += s2;
+        g.sg += thrownTenths(s1, s2);
         if (slot.startsWith('espresso')) continue;
         g.batches += batches;
         if (!ml) continue;
@@ -98,12 +107,14 @@ export function WastePanel({ stores, today, filterNote }: { stores: AdminStore[]
   }, [data, stores, groupBy]);
 
   const total = rows.reduce(
-    (t, r) => ({ eth: t.eth + r.eth, bra: t.bra + r.bra, ethHot: t.ethHot + r.ethHot, ethIced: t.ethIced + r.ethIced, braHot: t.braHot + r.braHot, braIced: t.braIced + r.braIced, events: t.events + r.events, w1: t.w1 + r.w1, w2: t.w2 + r.w2, wg: t.wg + r.wg }),
-    { eth: 0, bra: 0, ethHot: 0, ethIced: 0, braHot: 0, braIced: 0, events: 0, w1: 0, w2: 0, wg: 0 },
+    (t, r) => ({ eth: t.eth + r.eth, bra: t.bra + r.bra, ethHot: t.ethHot + r.ethHot, ethIced: t.ethIced + r.ethIced, braHot: t.braHot + r.braHot, braIced: t.braIced + r.braIced, events: t.events + r.events, w1: t.w1 + r.w1, w2: t.w2 + r.w2, wg: t.wg + r.wg, s1: t.s1 + r.s1, s2: t.s2 + r.s2, sg: t.sg + r.sg }),
+    { eth: 0, bra: 0, ethHot: 0, ethIced: 0, braHot: 0, braIced: 0, events: 0, w1: 0, w2: 0, wg: 0, s1: 0, s2: 0, sg: 0 },
   );
-  const grams = (r: { eth: number; bra: number; wg: number }) => dripTenths(r.eth) + dripTenths(r.bra) + r.wg;
+  // espresso = thrown during calibration + bad shots thrown during service
+  const esp = (r: { wg: number; sg: number }) => r.wg + r.sg;
+  const grams = (r: { eth: number; bra: number; wg: number; sg: number }) => dripTenths(r.eth) + dripTenths(r.bra) + esp(r);
   const max = Math.max(1, ...rows.map(grams));
-  const withWaste = rows.filter((r) => r.eth + r.bra + r.w1 + r.w2 > 0);
+  const withWaste = rows.filter((r) => r.eth + r.bra + r.w1 + r.w2 + r.s1 + r.s2 > 0);
   const storesWithWaste = groupBy === 'store' ? withWaste.length : rows.filter((r) => r.eth + r.bra > 0).reduce((a, r) => a + r.stores, 0);
 
   const exportXlsx = async () => {
@@ -124,7 +135,7 @@ export function WastePanel({ stores, today, filterNote }: { stores: AdminStore[]
         { label: 'Total coffee wasted', value: kg(grams(total) / 10), sub: `${storesWithWaste} of ${stores.length} stores had waste`, tone: 'bad' },
         { label: 'Ethiopian (drip)', value: kg(g(total.eth)), sub: `Hot ${kg(g(total.ethHot))} · Iced ${kg(g(total.ethIced))}`, tone: 'eth' },
         { label: 'Brazilian (drip)', value: kg(g(total.bra)), sub: `Hot ${kg(g(total.braHot))} · Iced ${kg(g(total.braIced))}`, tone: 'bra' },
-        { label: 'Espresso thrown', value: kg(total.wg / 10), sub: `Dose 1 ×${total.w1} · Dose 2 ×${total.w2}`, tone: 'esp' },
+        { label: 'Espresso thrown', value: kg(esp(total) / 10), sub: `Calibration ${kg(total.wg / 10)} · Service ${kg(total.sg / 10)} (${total.s1 + total.s2} bad shots)`, tone: 'esp' },
       ],
       charts: [
         donut({
@@ -133,7 +144,7 @@ export function WastePanel({ stores, today, filterNote }: { stores: AdminStore[]
           parts: [
             { name: 'Ethiopian', color: BEAN_COLOR.ethiopian, value: g(total.eth) },
             { name: 'Brazilian', color: BEAN_COLOR.brazilian, value: g(total.bra) },
-            { name: 'Espresso', color: BEAN_COLOR.espresso, value: total.wg / 10 },
+            { name: 'Espresso', color: BEAN_COLOR.espresso, value: esp(total) / 10 },
           ],
           fmt: kg,
         }),
@@ -155,14 +166,14 @@ export function WastePanel({ stores, today, filterNote }: { stores: AdminStore[]
           series: [
             { name: 'Ethiopian', color: BEAN_COLOR.ethiopian, values: top.map((r) => g(r.eth)) },
             { name: 'Brazilian', color: BEAN_COLOR.brazilian, values: top.map((r) => g(r.bra)) },
-            { name: 'Espresso', color: BEAN_COLOR.espresso, values: top.map((r) => r.wg / 10) },
+            { name: 'Espresso', color: BEAN_COLOR.espresso, values: top.map((r) => esp(r) / 10) },
           ],
           fmt: kg,
           w: 1120,
         }),
       ],
       notes: [
-        'All waste is coffee weight. Drip: 1 L brewed = 70 g. Espresso: dose 1 = 18.8 g and dose 2 = 25.8 g per shot thrown.',
+        'All waste is coffee weight. Drip: 1 L brewed = 70 g. Espresso: dose 1 = 18.8 g and dose 2 = 25.8 g per shot thrown, during calibration and (bad shots) during service.',
         'Reset (voided) batches are excluded. Times are store time (Riyadh).',
       ],
       sheets: [
@@ -179,8 +190,12 @@ export function WastePanel({ stores, today, filterNote }: { stores: AdminStore[]
             { header: 'Bra hot g', key: 'braHot', fmt: '#,##0.0', width: 11 },
             { header: 'Bra iced g', key: 'braIced', fmt: '#,##0.0', width: 11 },
             { header: 'Espresso g', key: 'esp', fmt: '#,##0.0', bar: '#6E665C', width: 12 },
-            { header: 'Dose 1 shots', key: 'w1', fmt: '0', width: 11 },
-            { header: 'Dose 2 shots', key: 'w2', fmt: '0', width: 11 },
+            { header: 'Espresso calibration g', key: 'espCal', fmt: '#,##0.0', width: 13 },
+            { header: 'Calibration D1 shots', key: 'w1', fmt: '0', width: 12 },
+            { header: 'Calibration D2 shots', key: 'w2', fmt: '0', width: 12 },
+            { header: 'Espresso service g', key: 'espSvc', fmt: '#,##0.0', bar: '#C2564A', width: 13 },
+            { header: 'Service D1 shots', key: 's1', fmt: '0', width: 11 },
+            { header: 'Service D2 shots', key: 's2', fmt: '0', width: 11 },
             { header: 'Drip discards', key: 'events', fmt: '0', width: 12 },
             { header: 'Drip batches', key: 'batches', fmt: '0', width: 12 },
             { header: 'Total g', key: 'total', fmt: '#,##0.0', bar: '#C2564A', width: 13 },
@@ -188,7 +203,7 @@ export function WastePanel({ stores, today, filterNote }: { stores: AdminStore[]
           rows: rows.map((r) => ({
             name: r.label, sub: groupBy === 'store' ? r.sub : `${r.stores} stores`,
             eth: g(r.eth), ethHot: g(r.ethHot), ethIced: g(r.ethIced), bra: g(r.bra), braHot: g(r.braHot), braIced: g(r.braIced),
-            esp: r.wg / 10, w1: r.w1, w2: r.w2, events: r.events, batches: r.batches, total: grams(r) / 10,
+            esp: esp(r) / 10, espCal: r.wg / 10, espSvc: r.sg / 10, s1: r.s1, s2: r.s2, w1: r.w1, w2: r.w2, events: r.events, batches: r.batches, total: grams(r) / 10,
           })),
         },
       ],
@@ -215,16 +230,16 @@ export function WastePanel({ stores, today, filterNote }: { stores: AdminStore[]
           <div className="waste-total-label">Total coffee wasted</div>
           <div className="waste-total-value num">{data ? formatGrams(grams(total)) : '–'}</div>
           <div className="waste-total-sub">
-            Drip {G(total.eth + total.bra)} · Espresso {formatGrams(total.wg)} · {storesWithWaste} of {stores.length} stores
+            Drip {G(total.eth + total.bra)} · Espresso {formatGrams(esp(total))} · {storesWithWaste} of {stores.length} stores
           </div>
         </div>
         <div className="waste-total" data-tone="esp">
           <div className="waste-total-label">
             <i className="dot-esp" /> Espresso thrown
           </div>
-          <div className="waste-total-value num">{data ? formatGrams(total.wg) : '–'}</div>
+          <div className="waste-total-value num">{data ? formatGrams(esp(total)) : '–'}</div>
           <div className="waste-total-sub num">
-            Dose 1 ×{total.w1} (18.8 g) · Dose 2 ×{total.w2} (25.8 g)
+            Calibration {formatGrams(total.wg)} · Service {formatGrams(total.sg)} ({total.s1 + total.s2} bad shots)
           </div>
         </div>
       </div>
@@ -255,7 +270,7 @@ export function WastePanel({ stores, today, filterNote }: { stores: AdminStore[]
         <span><i className="dot-eth" /> Ethiopian</span>
         <span><i className="dot-bra" /> Brazilian</span>
         <span><i className="dot-esp" /> Espresso</span>
-        <span className="muted">All in coffee weight. Drip: 1 L brewed = 70 g. Espresso: dose 1 = 18.8 g, dose 2 = 25.8 g per shot thrown. Reset batches are excluded.</span>
+        <span className="muted">All in coffee weight. Drip: 1 L brewed = 70 g. Espresso: dose 1 = 18.8 g, dose 2 = 25.8 g per shot thrown, in calibration and in service (svc). Reset batches are excluded.</span>
         {filterNote && <span className="status-chip" data-warn>Filtered: {filterNote}</span>}
       </div>
 
@@ -288,13 +303,16 @@ export function WastePanel({ stores, today, filterNote }: { stores: AdminStore[]
               </span>
               <span className="num" title={`Hot ${G(r.ethHot)} · Iced ${G(r.ethIced)}`}>{r.eth ? G(r.eth) : '–'}</span>
               <span className="num" title={`Hot ${G(r.braHot)} · Iced ${G(r.braIced)}`}>{r.bra ? G(r.bra) : '–'}</span>
-              <span className="num" title={`Dose 1 ×${r.w1} · Dose 2 ×${r.w2}`}>{r.wg ? formatGrams(r.wg) : '–'}</span>
+              <span className="num" title={`Calibration ${formatGrams(r.wg)} (D1 ×${r.w1} · D2 ×${r.w2}) · Service ${formatGrams(r.sg)} (D1 ×${r.s1} · D2 ×${r.s2})`}>
+                {esp(r) ? formatGrams(esp(r)) : '–'}
+                {r.sg > 0 && <small className="waste-svc"> svc {formatGrams(r.sg)}</small>}
+              </span>
               <span className="num"><b>{formatGrams(grams(r))}</b></span>
               <span className="waste-bar-col">
                 <span className="waste-bar" style={{ width: `${(grams(r) / max) * 100}%` }}>
                   <span className="seg-eth" style={{ flexGrow: dripTenths(r.eth) }} />
                   <span className="seg-bra" style={{ flexGrow: dripTenths(r.bra) }} />
-                  <span className="seg-esp" style={{ flexGrow: r.wg }} />
+                  <span className="seg-esp" style={{ flexGrow: esp(r) }} />
                 </span>
               </span>
             </motion.div>

@@ -30,6 +30,7 @@ import {
   CHECK_GRACE_MS,
   CHECKS_SINCE_MS,
   type Down,
+  MAX_SERVICE_SHOTS,
 } from '../shared/config';
 import { signToken, verifyToken, hashPin, randomId, safeEqual } from './lib/crypto';
 import { checkGeofence, type Fix } from './lib/geo';
@@ -334,6 +335,37 @@ app.post('/api/batches/:id/discard', requireStore, async (c) => {
   // Allowed for 30 minutes after the batch started.
   const ok = await patchBatch(c.env, store.id, day, c.req.param('id') ?? '', 'dl', ml, `json_extract(j.value, '$.t') > ?5 - 1800000`);
   return ok ? c.json({ ok: true }) : err(c, 409, 'too_late');
+});
+
+/** Bad shots thrown during service, logged against the running espresso calibration (one row written). */
+app.post('/api/batches/:id/shots', requireStore, async (c) => {
+  const store = c.get('store');
+  const { day, d1 = 0, d2 = 0 } = await readBody<{ day?: string; d1?: number; d2?: number }>(c);
+  if (!day || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return err(c, 400, 'bad_day');
+  const ok = (n: unknown) => Number.isInteger(n) && (n as number) >= 0 && (n as number) <= MAX_SERVICE_SHOTS;
+  if (!ok(d1) || !ok(d2) || d1 + d2 === 0) return err(c, 400, 'bad_count');
+  const id = c.req.param('id') ?? '';
+  const hit = await c.env.DB.prepare(
+    `SELECT j.key AS k, j.value AS v FROM days, json_each(days.batches) j
+     WHERE days.day = ?1 AND days.store_id = ?2 AND json_extract(j.value, '$.id') = ?3`,
+  )
+    .bind(day, store.id, id)
+    .first<{ k: number; v: string }>();
+  if (!hit) return err(c, 404, 'not_found');
+  const b = safeJson<Batch>(hit.v, {} as Batch);
+  if (!b.s?.startsWith('espresso') || b.v) return err(c, 409, 'not_espresso');
+  const now = Date.now();
+  b.s1 = (b.s1 ?? 0) + d1;
+  b.s2 = (b.s2 ?? 0) + d2;
+  b.st = [...(b.st ?? []), ...Array.from({ length: d1 + d2 }, () => now)].slice(-40);
+  const res = await c.env.DB.prepare(
+    `UPDATE days SET batches = json_set(batches, '$[' || CAST(?4 AS INTEGER) || ']', json(?5))
+     WHERE day = ?1 AND store_id = ?2 AND json_extract(batches, '$[' || CAST(?4 AS INTEGER) || '].id') = ?3`,
+  )
+    .bind(day, store.id, id, hit.k, JSON.stringify(b))
+    .run();
+  if (!res.meta.changes) return err(c, 409, 'conflict');
+  return c.json({ now, batch: b });
 });
 
 /** Change the current batch (lot) number of one bean for this store. */
@@ -705,11 +737,11 @@ app.get('/api/admin/waste', requireAdmin, async (c) => {
   const from = c.req.query('from') ?? today;
   const to = c.req.query('to') ?? today;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || from > to) return err(c, 400, 'bad_range');
-  // per slot: [discarded ml, discard count, batches, dose-1 shots thrown, dose-2 shots thrown, espresso thrown (0.1 g)]
+  // per slot: [discarded ml, discard count, batches, dose-1 shots thrown, dose-2 shots thrown, espresso thrown (0.1 g), dose-1 / dose-2 shots thrown during service]
   const totals: Record<string, Record<string, number[]>> = {};
   const add = (sid: string, slot: string, v: number[]) => {
-    const t = ((totals[sid] ??= {})[slot] ??= [0, 0, 0, 0, 0, 0]);
-    for (let i = 0; i < 6; i++) t[i] += v[i] ?? 0;
+    const t = ((totals[sid] ??= {})[slot] ??= [0, 0, 0, 0, 0, 0, 0, 0]);
+    for (let i = 0; i < 8; i++) t[i] += v[i] ?? 0;
   };
   // finished days come from the nightly summary (1 row per day)
   const { results } = await c.env.DB.prepare('SELECT day, data FROM stats_daily WHERE day >= ?1 AND day <= ?2')
@@ -724,7 +756,7 @@ app.get('/api/admin/waste', requireAdmin, async (c) => {
   const missing: string[] = [];
   for (let d = from; d <= to && missing.length < 93; d = nextDay(d)) if (!covered.has(d) && d <= today) missing.push(d);
   for (const day of missing) {
-    for (const r of await aggregateDay(c.env, day)) add(String(r.sid), r.slot, [r.ml, r.n, r.batches, r.w1, r.w2, r.wg]);
+    for (const r of await aggregateDay(c.env, day)) add(String(r.sid), r.slot, [r.ml, r.n, r.batches, r.w1, r.w2, r.wg, r.s1, r.s2]);
   }
   return c.json({ from, to, today, totals });
 });
@@ -779,8 +811,10 @@ app.get('/api/admin/batches', requireAdmin, async (c) => {
   const add = (day: string, r: BatchRow) => {
     const key = `${r[0]}|${r[1]}|${r[2]}`;
     let e = acc.get(key);
-    if (!e) acc.set(key, (e = { sid: r[0], bn: r[1], slot: r[2], v: [0, 0, 0, 0, 0, 0, 0, 0], mn1: null, mx1: null, mn2: null, mx2: null, first: day, last: day }));
+    if (!e) acc.set(key, (e = { sid: r[0], bn: r[1], slot: r[2], v: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], mn1: null, mx1: null, mn2: null, mx2: null, first: day, last: day }));
     for (let i = 0; i < 8; i++) e.v[i] += Number(r[3 + i] ?? 0); // logs, ml, n, w1, w2, wg, sd1, sd2
+    e.v[8] += Number(r[15] ?? 0); // dose 1 shots thrown during service
+    e.v[9] += Number(r[16] ?? 0); // dose 2 shots thrown during service
     const lo = (a: number | null, b: number | null) => (a == null ? b : b == null ? a : Math.min(a, b));
     const hi = (a: number | null, b: number | null) => (a == null ? b : b == null ? a : Math.max(a, b));
     e.mn1 = lo(e.mn1, r[11]);
@@ -901,17 +935,19 @@ async function aggregateDay(env: Env, day: string) {
             SUM(COALESCE(json_extract(j.value, '$.w1'), 0)) AS w1,
             SUM(COALESCE(json_extract(j.value, '$.w2'), 0)) AS w2,
             SUM(COALESCE(json_extract(j.value, '$.wg'),
-                COALESCE(json_extract(j.value, '$.w1'), 0) * 188 + COALESCE(json_extract(j.value, '$.w2'), 0) * 258)) AS wg
+                COALESCE(json_extract(j.value, '$.w1'), 0) * 188 + COALESCE(json_extract(j.value, '$.w2'), 0) * 258)) AS wg,
+            SUM(COALESCE(json_extract(j.value, '$.s1'), 0)) AS s1,
+            SUM(COALESCE(json_extract(j.value, '$.s2'), 0)) AS s2
      FROM days d, json_each(d.batches) j
      WHERE d.day = ?1 AND json_extract(j.value, '$.v') IS NULL
      GROUP BY d.store_id, slot`,
   )
     .bind(day)
-    .all<{ sid: number; slot: string; ml: number; n: number; batches: number; w1: number; w2: number; wg: number }>();
+    .all<{ sid: number; slot: string; ml: number; n: number; batches: number; w1: number; w2: number; wg: number; s1: number; s2: number }>();
   return results;
 }
 
-type BatchRow = [number, string, string, number, number, number, number, number, number, number, number, number | null, number | null, number | null, number | null];
+type BatchRow = [number, string, string, number, number, number, number, number, number, number, number, number | null, number | null, number | null, number | null, number?, number?];
 
 /** Per store / batch / slot totals for one day, computed inside the database. Reset batches are ignored. */
 async function aggregateBatchDay(env: Env, day: string): Promise<BatchRow[]> {
@@ -927,7 +963,8 @@ async function aggregateBatchDay(env: Env, day: string): Promise<BatchRow[]> {
             SUM(COALESCE(json_extract(j.value, '$.d1'), 0)) AS sd1,
             SUM(COALESCE(json_extract(j.value, '$.d2'), 0)) AS sd2,
             MIN(json_extract(j.value, '$.d1')) AS mn1, MAX(json_extract(j.value, '$.d1')) AS mx1,
-            MIN(json_extract(j.value, '$.d2')) AS mn2, MAX(json_extract(j.value, '$.d2')) AS mx2
+            MIN(json_extract(j.value, '$.d2')) AS mn2, MAX(json_extract(j.value, '$.d2')) AS mx2,
+            SUM(COALESCE(json_extract(j.value, '$.s1'), 0)) AS s1, SUM(COALESCE(json_extract(j.value, '$.s2'), 0)) AS s2
      FROM days d, json_each(d.batches) j
      WHERE d.day = ?1 AND json_extract(j.value, '$.v') IS NULL AND json_extract(j.value, '$.bn') IS NOT NULL
      GROUP BY d.store_id, bn, slot`,
@@ -937,6 +974,7 @@ async function aggregateBatchDay(env: Env, day: string): Promise<BatchRow[]> {
   return results.map((r) => [
     Number(r.sid), String(r.bn), String(r.slot), Number(r.logs), Number(r.ml), Number(r.n), Number(r.w1), Number(r.w2), Number(r.wg),
     Number(r.sd1), Number(r.sd2), r.mn1 as number | null, r.mx1 as number | null, r.mn2 as number | null, r.mx2 as number | null,
+    Number(r.s1 ?? 0), Number(r.s2 ?? 0),
   ]);
 }
 
@@ -955,7 +993,7 @@ async function nightly(env: Env) {
     if (done.has(day) && day !== days[0]) continue;
     const rows = await aggregateDay(env, day);
     const data: Record<string, Record<string, number[]>> = {};
-    for (const r of rows) (data[r.sid] ??= {})[r.slot] = [r.ml, r.n, r.batches, r.w1, r.w2, r.wg];
+    for (const r of rows) (data[r.sid] ??= {})[r.slot] = [r.ml, r.n, r.batches, r.w1, r.w2, r.wg, r.s1, r.s2];
     await env.DB.prepare(`INSERT INTO stats_daily (day, data) VALUES (?1, ?2) ON CONFLICT (day) DO UPDATE SET data = excluded.data`)
       .bind(day, JSON.stringify(data))
       .run();

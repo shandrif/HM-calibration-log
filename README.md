@@ -70,6 +70,14 @@ Re-tests are saved as new attempts; the latest counts. A failed check never bloc
 Checks are stored in the `checks` table (one row per attempt), shown in the Log and the daily PDF, and summarised in
 admin → *Grind checks* (done %, pass %, problems by type, per store / area manager / ROM / city). Purged after 92 days.
 
+## Bad shots during service
+
+Espresso tiles have a **Shot thrown** button: staff count dose 1 / dose 2 shots thrown away during service; they are
+saved on the running calibration (`s1`, `s2`, times in `st`; one row write) and counted as espresso waste in
+service (18.8 g / 25.8 g per shot). Three or more within 30 minutes turn the tile amber with "recalibrate?".
+The Log, PDF, admin Bean waste and Batches reports and the Excel exports split espresso waste into calibration
+and service.
+
 ## Machine off (cleaning)
 
 Every tile has a power button. Turning an item off (for cleaning or servicing) asks who, silences its expiry buzzer

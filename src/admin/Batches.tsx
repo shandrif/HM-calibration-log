@@ -3,7 +3,7 @@ import { motion } from 'motion/react';
 import { toast } from 'sonner';
 import { adminApi, type AdminStore, type BatchesResponse } from '../lib/api';
 import { addDays } from '../lib/time';
-import { formatDose, formatGrams, beanOf, dripTenths, type BeanKey } from '../../shared/config';
+import { formatDose, formatGrams, beanOf, dripTenths, thrownTenths, type BeanKey } from '../../shared/config';
 import { Sheet } from '../components/Sheet';
 
 const RANGES = [
@@ -21,6 +21,8 @@ interface StoreAgg {
   wg: number;
   w1: number;
   w2: number;
+  s1: number;
+  s2: number;
   first: string;
   last: string;
 }
@@ -39,6 +41,8 @@ interface BatchAgg {
   w1: number;
   w2: number;
   wg: number;
+  s1: number; // dose 1 shots thrown during service
+  s2: number;
   espLogs: number;
   sd1: number;
   sd2: number;
@@ -85,15 +89,17 @@ export function BatchesPanel({ stores, today }: { stores: AdminStore[]; today: s
       if (!a)
         m.set(
           key,
-          (a = { key, bn: r.bn, bean: b, stores: new Map(), logs: 0, hotLogs: 0, icedLogs: 0, ml: 0, mlHot: 0, mlIced: 0, discards: 0, w1: 0, w2: 0, wg: 0, espLogs: 0, sd1: 0, sd2: 0, mn1: null, mx1: null, mn2: null, mx2: null, first: r.first, last: r.last }),
+          (a = { key, bn: r.bn, bean: b, stores: new Map(), logs: 0, hotLogs: 0, icedLogs: 0, ml: 0, mlHot: 0, mlIced: 0, discards: 0, w1: 0, w2: 0, wg: 0, s1: 0, s2: 0, espLogs: 0, sd1: 0, sd2: 0, mn1: null, mx1: null, mn2: null, mx2: null, first: r.first, last: r.last }),
         );
-      const [logs, ml, n, w1, w2, wg, sd1, sd2] = r.v;
+      const [logs, ml, n, w1, w2, wg, sd1, sd2, s1 = 0, s2 = 0] = r.v;
       a.logs += logs;
       a.ml += ml;
       a.discards += n;
       a.w1 += w1;
       a.w2 += w2;
-      a.wg += wg;
+      a.wg += wg + thrownTenths(s1, s2); // espresso waste = calibration + bad shots in service
+      a.s1 += s1;
+      a.s2 += s2;
       if (r.slot.startsWith('iced')) (a.icedLogs += logs), (a.mlIced += ml);
       else if (r.slot.startsWith('hot')) (a.hotLogs += logs), (a.mlHot += ml);
       if (b === 'espresso') {
@@ -107,12 +113,14 @@ export function BatchesPanel({ stores, today }: { stores: AdminStore[]; today: s
       }
       if (r.first < a.first) a.first = r.first;
       if (r.last > a.last) a.last = r.last;
-      const s = a.stores.get(r.sid) ?? { sid: r.sid, logs: 0, ml: 0, wg: 0, w1: 0, w2: 0, first: r.first, last: r.last };
+      const s = a.stores.get(r.sid) ?? { sid: r.sid, logs: 0, ml: 0, wg: 0, w1: 0, w2: 0, s1: 0, s2: 0, first: r.first, last: r.last };
       s.logs += logs;
       s.ml += ml;
-      s.wg += wg;
+      s.wg += wg + thrownTenths(s1, s2);
       s.w1 += w1;
       s.w2 += w2;
+      s.s1 += s1;
+      s.s2 += s2;
       if (r.first < s.first) s.first = r.first;
       if (r.last > s.last) s.last = r.last;
       a.stores.set(r.sid, s);
@@ -169,7 +177,7 @@ export function BatchesPanel({ stores, today }: { stores: AdminStore[]; today: s
         }),
       ],
       notes: [
-        'Waste is coffee weight: drip 1 L brewed = 70 g; espresso dose 1 = 18.8 g, dose 2 = 25.8 g per shot thrown.',
+        'Waste is coffee weight: drip 1 L brewed = 70 g; espresso dose 1 = 18.8 g, dose 2 = 25.8 g per shot thrown (during calibration and bad shots during service).',
         'Dose settings are the grinder settings logged at calibration (average rounded to the 5-step scale).',
         'Only calibrations with a batch number are included. Reset batches are excluded.',
       ],
@@ -185,8 +193,10 @@ export function BatchesPanel({ stores, today }: { stores: AdminStore[]; today: s
             { header: 'Waste g', key: 'g', fmt: '#,##0.0', bar: '#C2564A', width: 12 },
             { header: 'g per calibration', key: 'per', fmt: '#,##0.0', bar: '#A9793B', width: 15 },
             { header: 'Drip discards', key: 'discards', fmt: '0', width: 12 },
-            { header: 'Dose 1 shots thrown', key: 'w1', fmt: '0', width: 13 },
-            { header: 'Dose 2 shots thrown', key: 'w2', fmt: '0', width: 13 },
+            { header: 'Calibration D1 shots', key: 'w1', fmt: '0', width: 13 },
+            { header: 'Calibration D2 shots', key: 'w2', fmt: '0', width: 13 },
+            { header: 'Service D1 shots', key: 's1', fmt: '0', width: 12 },
+            { header: 'Service D2 shots', key: 's2', fmt: '0', width: 12 },
             { header: 'Dose 1 avg', key: 'd1', width: 11 },
             { header: 'Dose 1 range', key: 'r1', width: 14 },
             { header: 'Dose 2 avg', key: 'd2', width: 11 },
@@ -197,6 +207,7 @@ export function BatchesPanel({ stores, today }: { stores: AdminStore[]; today: s
           rows: batches.map((a) => ({
             bn: a.bn, bean: BEAN_LABEL[a.bean], stores: a.stores.size, logs: a.logs, g: grams(a), per: a.logs ? grams(a) / a.logs : 0,
             discards: a.bean === 'espresso' ? null : a.discards, w1: a.bean === 'espresso' ? a.w1 : null, w2: a.bean === 'espresso' ? a.w2 : null,
+            s1: a.bean === 'espresso' ? a.s1 : null, s2: a.bean === 'espresso' ? a.s2 : null,
             d1: a.bean === 'espresso' ? avgDose(a.sd1, a.espLogs) : '', r1: a.bean === 'espresso' && a.mn1 != null ? `${formatDose(a.mn1)}–${formatDose(a.mx1)}` : '',
             d2: a.bean === 'espresso' ? avgDose(a.sd2, a.espLogs) : '', r2: a.bean === 'espresso' && a.mn2 != null ? `${formatDose(a.mn2)}–${formatDose(a.mx2)}` : '',
             first: a.first, last: a.last,
@@ -311,7 +322,7 @@ export function BatchesPanel({ stores, today }: { stores: AdminStore[]; today: s
               <Kpi label="Calibrations" value={String(open.logs)} />
               {open.bean === 'espresso' ? (
                 <>
-                  <Kpi label="Thrown" value={formatGrams(open.wg)} sub={`D1 ×${open.w1} · D2 ×${open.w2}`} />
+                  <Kpi label="Thrown" value={formatGrams(open.wg)} sub={`Calibration D1 ×${open.w1} · D2 ×${open.w2} · Service D1 ×${open.s1} · D2 ×${open.s2}`} />
                   <Kpi label="Dose 1 avg" value={avgDose(open.sd1, open.espLogs)} sub={open.mn1 != null ? `${formatDose(open.mn1)} – ${formatDose(open.mx1)}` : ''} />
                   <Kpi label="Dose 2 avg" value={avgDose(open.sd2, open.espLogs)} sub={open.mn2 != null ? `${formatDose(open.mn2)} – ${formatDose(open.mx2)}` : ''} />
                 </>

@@ -107,6 +107,9 @@ export interface Batch {
   w1?: number; // espresso: dose 1 shots thrown during calibration
   w2?: number; // espresso: dose 2 shots thrown during calibration
   wg?: number; // espresso: coffee thrown, tenths of a gram (w1 × 18.8 g + w2 × 25.8 g at the time of logging)
+  s1?: number; // espresso: dose 1 shots thrown later, during service (bad shots)
+  s2?: number; // espresso: dose 2 shots thrown during service
+  st?: number[]; // espresso: time of each shot thrown during service (for the recalibrate prompt)
   bn?: string; // bean batch (lot) number in use when this was logged
   k?: number; // drip tank number (1, 2, 3…); missing = tank 1
   dl?: number; // ml discarded from the previous batch of this slot
@@ -271,3 +274,13 @@ export const openDown = (downs: Down[] | undefined, slot: string) => downs?.find
 /** True when the moment `t` falls inside an off period of `slot` (expiries then are silent). */
 export const wasOff = (downs: Down[] | undefined, slot: string, t: number) =>
   !!downs?.some((d) => d.s === slot && d.off <= t && (d.on == null || d.on >= t));
+
+// ---------------------------------------------------------------- shots thrown during service
+
+/** Suggest recalibrating when this many shots are thrown within the window. */
+export const SERVICE_PROMPT = { shots: 3, windowMs: 30 * 60 * 1000 };
+export const MAX_SERVICE_SHOTS = 10; // per tap
+/** Coffee thrown during service, tenths of a gram. */
+export const serviceTenths = (b: { s1?: number; s2?: number }) => thrownTenths(b.s1 ?? 0, b.s2 ?? 0);
+/** Shots thrown during service in the last window (recalibrate prompt). */
+export const recentShots = (b: { st?: number[] } | undefined, now: number) => (b?.st ?? []).filter((t) => now - t <= SERVICE_PROMPT.windowMs && t <= now).length;
